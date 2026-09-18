@@ -6,6 +6,22 @@ PC Bridge is a Windows desktop bridge that lets supported AI clients use locally
 
 > Early public preview — v0.5.16
 
+## Download
+
+Windows x64 builds are published on the [GitHub Releases page](https://github.com/Martin123132/PC-Bridge/releases).
+
+For most users, download:
+
+- `PC-Bridge-Setup-0.5.16-Windows-x64.exe`
+
+A portable ZIP is also provided:
+
+- `PC-Bridge-0.5.16-Windows-x64.zip`
+
+Verify downloads against `SHA256SUMS.txt` on the release.
+
+**Current preview builds are not yet code-signed**, so Windows SmartScreen may warn when you first run them.
+
 ## See it working
 
 [Watch the full ChatGPT setup and first-test video](docs/media/PC-Bridge-Setup-and-First-Test.mp4)

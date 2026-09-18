@@ -19,9 +19,78 @@
   "scripts": {
     "start": "electron .",
     "test": "node --test tests/*.test.mjs",
-    "verify:release": "node scripts/verify-release.mjs"
+    "verify:release": "node scripts/verify-release.mjs",
+    "build:win": "electron-builder --win --x64"
   },
   "devDependencies": {
-    "electron": "^44.4.3"
+    "electron": "^44.4.3",
+    "electron-builder": "^26.15.3"
+  },
+  "build": {
+    "appId": "uk.co.twohandsnetwork.pcbridge",
+    "productName": "PC Bridge",
+    "copyright": "Copyright © 2026 Two Hands Network Ltd",
+    "asar": true,
+    "directories": {
+      "output": "release"
+    },
+    "files": [
+      "desktop/**/*",
+      "src/**/*",
+      "ui/**/*",
+      "package.json"
+    ],
+    "extraResources": [
+      {
+        "from": "vendor/tunnel-client.exe",
+        "to": "vendor/tunnel-client.exe"
+      },
+      {
+        "from": "vendor/LICENSE-tunnel.txt",
+        "to": "vendor/LICENSE-tunnel.txt"
+      },
+      {
+        "from": "vendor/LICENSE-tunnel-dependencies.txt",
+        "to": "vendor/LICENSE-tunnel-dependencies.txt"
+      },
+      {
+        "from": "vendor/NOTICE-tunnel.txt",
+        "to": "vendor/NOTICE-tunnel.txt"
+      },
+      {
+        "from": "vendor/NOTICE.md",
+        "to": "vendor/NOTICE.md"
+      },
+      {
+        "from": "vendor/tunnel-client.spdx.json",
+        "to": "vendor/tunnel-client.spdx.json"
+      }
+    ],
+    "win": {
+      "executableName": "PC Bridge",
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        },
+        {
+          "target": "zip",
+          "arch": [
+            "x64"
+          ]
+        }
+      ]
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "PC Bridge",
+      "artifactName": "PC-Bridge-Setup-${version}-Windows-x64.${ext}"
+    },
+    "artifactName": "PC-Bridge-${version}-Windows-x64.${ext}"
   }
 }

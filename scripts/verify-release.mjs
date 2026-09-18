@@ -15,7 +15,7 @@ const secretPatterns=[
   {name:'persistent MCP capability URL',re:/https:\/\/[^\s"'<>]+\/mcp\/[0-9a-f]{64}\b/gi},
   {name:'personal Windows profile path',re:/[A-Z]:\\Users\\ollet\\/gi}
 ];
-const allowedDirs=new Set(['.git','node_modules']);
+const allowedDirs=new Set(['.git','node_modules','release','dist','out']);
 
 async function walk(dir){
   const out=[];
