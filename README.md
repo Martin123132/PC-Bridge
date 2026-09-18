@@ -43,6 +43,17 @@ The video walks from opening PC Bridge, through the real ChatGPT setup, to a har
 
 PC Bridge runs tools as the signed-in Windows user. **It is not an operating-system sandbox.**
 
+## Windows downloads
+
+Private/public release builds provide:
+
+- `PC-Bridge-Setup-0.5.16-Windows-x64.exe` — normal Windows installer.
+- `PC-Bridge-0.5.16-Windows-x64.zip` — portable fallback.
+
+The current preview build is **not code-signed**, so Windows SmartScreen may show an unknown-publisher warning. Verify the release against `SHA256SUMS.txt` before running it.
+
+See [docs/FRESH_MACHINE_TEST.md](docs/FRESH_MACHINE_TEST.md) for the clean-PC acceptance test.
+
 ## Quick start
 
 ### ChatGPT

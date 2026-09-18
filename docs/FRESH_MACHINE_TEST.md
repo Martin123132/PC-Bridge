@@ -6,6 +6,8 @@ Use this checklist on a Windows PC that has not been used to develop this copy o
 
 While the repository is private, sign in to the company GitHub account and open the latest draft release for **Martin123132/PC-Bridge**.
 
+The current private preview is not code-signed. A Windows SmartScreen / Unknown publisher warning is therefore expected and should be recorded as part of this test.
+
 Prefer the installer first:
 
 - `PC-Bridge-Setup-0.5.16-Windows-x64.exe`
