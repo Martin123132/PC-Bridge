@@ -5,7 +5,7 @@
   "description": "Connect AI conversations to Windows workspaces you control.",
   "author": "Two Hands Network Ltd",
   "private": true,
-  "license": "Apache-2.0",
+  "license": "SEE LICENSE IN LICENSE",
   "type": "module",
   "main": "desktop/main.mjs",
   "dependencies": {

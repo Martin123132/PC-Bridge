@@ -94,7 +94,18 @@ The Claude connection currently uses the `@maxoperf/tunnel` guest tunnel service
 
 ## Licence
 
-PC Bridge: **Apache License 2.0** — see [LICENSE](LICENSE).
+PC Bridge original code is **source-available under a dual licence**:
+
+- PolyForm Noncommercial 1.0.0; **or**
+- PolyForm Small Business 1.0.0,
+
+at the user's option.
+
+That means individuals, noncommercial users and qualifying small businesses can use, modify and redistribute PC Bridge within the applicable licence terms. Uses outside both grants require a separate commercial licence from Two Hands Network Ltd.
+
+This is intentionally **not** presented as OSI-approved open-source software.
+
+See [LICENSE](LICENSE), [COMMERCIAL_LICENSE.md](COMMERCIAL_LICENSE.md) and [TRADEMARKS.md](TRADEMARKS.md).
 
 Third-party software retains its own licences. See [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) and `vendor/`.
 

@@ -1,6 +1,6 @@
 # Third-party notices
 
-PC Bridge itself is licensed under Apache-2.0.
+PC Bridge original Two Hands Network Ltd code is licensed separately under the dual source-available terms in LICENSE. The entries below describe third-party software only.
 
 Direct npm dependencies in v0.5.16 are permissively licensed:
 

@@ -45,7 +45,7 @@ for(const file of files){
 }
 
 const pkg=JSON.parse(await readFile(path.join(root,'package.json'),'utf8'));
-if(pkg.license!=='Apache-2.0')failures.push('package.json license is not Apache-2.0');
+if(pkg.license!=='SEE LICENSE IN LICENSE')failures.push('package.json must point to the repository licence');
 if(pkg.version!=='0.5.16')failures.push('unexpected package version '+pkg.version);
 
 const tunnel=await readFile(path.join(root,'vendor','tunnel-client.exe'));
@@ -53,7 +53,7 @@ const actual=createHash('sha256').update(tunnel).digest('hex');
 if(actual!==expectedTunnelSha)failures.push('vendor/tunnel-client.exe hash mismatch');
 
 for(const required of [
-  'LICENSE','NOTICE','THIRD_PARTY_NOTICES.md','SECURITY.md',
+  'LICENSE','NOTICE','COMMERCIAL_LICENSE.md','TRADEMARKS.md','THIRD_PARTY_NOTICES.md','SECURITY.md','LICENSES/PolyForm-Noncommercial-1.0.0.md','LICENSES/PolyForm-Small-Business-1.0.0.md',
   'docs/media/PC-Bridge-Setup-and-First-Test.mp4',
   'vendor/LICENSE-tunnel.txt','vendor/NOTICE-tunnel.txt','vendor/tunnel-client.spdx.json'
 ]){

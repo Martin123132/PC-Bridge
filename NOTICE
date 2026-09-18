@@ -1,7 +1,12 @@
 PC Bridge
 Copyright 2026 Two Hands Network Ltd
 
-Licensed under the Apache License, Version 2.0.
+Required Notice: Copyright 2026 Two Hands Network Ltd
+
+PC Bridge original code is offered under the dual source-available terms described in LICENSE:
+PolyForm Noncommercial 1.0.0 OR PolyForm Small Business 1.0.0, at the user's option.
+
+Uses outside those grants require a separate commercial licence from Two Hands Network Ltd.
 
 This distribution includes third-party software under separate licences.
-See THIRD_PARTY_NOTICES.md and the files in vendor/.
+See THIRD_PARTY_NOTICES.md and vendor/.
