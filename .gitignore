@@ -1,0 +1,16 @@
+node_modules/
+dist/
+out/
+release/
+*.log
+*.bak
+*.tmp
+.DS_Store
+Thumbs.db
+connection.json
+remote-connection.json
+workspace-state.json
+ai-clients.json
+*.encrypted
+smoke-result.json
+tunnel-health-*.url

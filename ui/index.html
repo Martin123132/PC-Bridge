@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'none'; base-uri 'none'; form-action 'none'; frame-src 'none'; object-src 'none'">
+  <title>PC Bridge</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <aside class="sidebar">
+    <div class="brand"><span class="brand-mark" aria-hidden="true"><i></i><i></i></span><span>PC Bridge<small>YOUR LOCAL CONNECTION</small></span></div>
+    <nav aria-label="Main navigation">
+      <button data-page="home" class="nav active"><span>◈</span>Overview</button>
+      <button data-page="chat" class="nav"><span>✦</span>ChatGPT</button>
+      <button data-page="connect" class="nav"><span>⇄</span>Connect ChatGPT</button>
+      <button data-page="remote" class="nav"><span>◎</span>Connect Claude</button>
+      <button data-page="projects" class="nav"><span>▣</span>Workspaces</button>
+      <button data-page="calendar" class="nav"><span>◷</span>Calendar</button>
+      <button data-page="activity" class="nav"><span>≋</span>Activity</button>
+    </nav>
+    <div class="sidebar-bottom"><div class="privacy-line"><span class="dot"></span>Local-first. Yours to control.</div><p>No Codex required.<br>No local AI to install.</p><span class="version" id="build-badge">PRIVATE ALPHA · starting…</span></div>
+  </aside>
+  <div class="shell">
+    <header><div id="connection-pill" class="pill">Not connected</div><div class="header-actions"><span id="access-label">Access paused</span><button id="sync-chat" class="button small ghost" hidden>Sync chat</button><button id="pause-top" class="button small danger-outline">Pause access</button></div></header>
+    <main id="main" tabindex="-1"><p>Starting your local workspace…</p></main>
+  </div>
+  <aside id="activity-rail" hidden aria-label="PC Bridge activity rail"></aside>
+  <div id="toast" role="status" aria-live="polite" hidden></div>
+  <dialog id="review"><div id="review-content"></div></dialog>
+  <script type="module" src="app.js"></script>
+</body>
+</html>
