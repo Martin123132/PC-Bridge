@@ -1,11 +1,13 @@
 const main=document.querySelector('#main');
-let current='home',state=null,busy=false,reviewId=null,chatAttached=false;
+let current='home',state=null,busy=false,reviewId=null,chatAttached=false,reviewRequest=0;
+let renderedPage=null,renderedMainHtml=null;
 let calendarCursor=new Date(),calendarSelected='',calendarMonthData=null,calendarDayData=null,calendarBusy=false;
 const draft={tunnelId:'',key:'',clientLabel:'',clientProvider:'anthropic-claude'};
 let deferredBridgeRefresh=false;
 const clientControlActive=()=>{const el=document.activeElement;return Boolean(el&&(el.id==='client-label'||el.id==='client-provider'||el.classList?.contains('client-ceiling')));};
 const esc=value=>String(value??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
-const time=value=>value?new Date(value).toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'}):'Not yet';
+const timeFormatter=new Intl.DateTimeFormat([],{hour:'2-digit',minute:'2-digit'});
+const time=value=>{if(!value)return 'Not yet';const date=new Date(value);return Number.isNaN(date.getTime())?'Invalid Date':timeFormatter.format(date);};
 const vaultRecoveryNotice=()=>{const r=state?.vault?.recovery;if(!r)return '';const count=Array.isArray(r.quarantined)?r.quarantined.length:0,rebuilt=r.snapshots_reindexed;return '<div class="tip amber"><strong>Vault index recovered.</strong> PC Bridge quarantined '+count+' damaged database file'+(count===1?'':'s')+' instead of deleting them and rebuilt the local index from normal bridge state'+(rebuilt?' plus '+Number(rebuilt.indexed||0)+' standalone snapshot manifest'+(Number(rebuilt.indexed||0)===1?'':'s'):'')+'. Recovery: '+esc(new Date(r.recovered_at).toLocaleString())+'.</div>';};
 const button=(action,label,kind='secondary',extra='')=>'<button class="button '+kind+'" data-action="'+action+'" '+extra+'>'+label+'</button>';
 const modeName=mode=>mode==='read_only'?'Read only':mode==='files_only'?'Files only':mode==='project_tasks'?'Project Tasks':mode==='approve_changes'?'Read + approve':'Full access';
@@ -43,7 +45,10 @@ function render(){
   const buildBadge=document.querySelector('#build-badge');if(buildBadge)buildBadge.textContent=(state.build_channel==='private-alpha'?'PRIVATE ALPHA':'BUILD')+' · '+state.version;
   document.querySelector('#pause-top').disabled=!state.access_enabled;
   document.querySelector('#sync-chat').hidden=current!=='chat';
-  main.innerHTML=({home,chat,connect,remote,projects,calendar,activity}[current])();
+  const nextMainHtml=({home,chat,connect,remote,projects,calendar,activity}[current])();
+  if(renderedPage!==current||renderedMainHtml!==nextMainHtml){
+    main.innerHTML=nextMainHtml;renderedPage=current;renderedMainHtml=nextMainHtml;
+  }
   void syncChat();
   renderRail();
   if(field&&['tunnel-id','runtime-key','client-label'].includes(field)){const replacement=document.getElementById(field);replacement?.focus();if(caret!==null)replacement?.setSelectionRange(caret,caret);}
@@ -83,14 +88,21 @@ function projects(){const cards=state.projects.map(p=>{const tasks=Array.isArray
 function calendar(){const vault=state.vault||{},cursor=calendarCursor,y=cursor.getFullYear(),m=cursor.getMonth(),counts=new Map((calendarMonthData?.days||[]).map(x=>[x.day,x])),first=new Date(y,m,1),pad=(first.getDay()+6)%7,days=new Date(y,m+1,0).getDate(),cells=[];for(let i=0;i<pad;i++)cells.push('<div class="cal-day blank"></div>');for(let d=1;d<=days;d++){const key=dateKey(new Date(y,m,d)),info=counts.get(key),sel=key===calendarSelected;cells.push('<button class="cal-day '+(info?'has-work ':'')+(sel?'selected':'')+'" data-action="cal-day" data-day="'+key+'"><strong>'+d+'</strong>'+(info?'<span>'+info.events+' event'+(info.events===1?'':'s')+'</span>':'')+'</button>');}const events=calendarDayData?.events||[],artifacts=calendarDayData?.artifacts||[],snapshots=calendarDayData?.snapshots||[];return vaultRecoveryNotice()+'<div class="page-heading"><div><div class="eyebrow">Vault & timeline</div><h1>Calendar</h1><p class="intro">A local, evidence-backed history of what happened, when it happened, and where the files live.</p></div><div class="actions">'+button('cal-prev','←','ghost')+button('cal-next','→','ghost')+button('vault-snapshot','Snapshot workspace','primary')+'</div></div><div class="vault-metrics"><div><strong>'+esc(vault.events||0)+'</strong><span>events</span></div><div><strong>'+esc(vault.artifacts||0)+'</strong><span>artifacts</span></div><div><strong>'+esc(vault.snapshots||0)+'</strong><span>snapshots</span></div></div><div class="calendar-layout"><section class="card calendar-card"><div class="calendar-title"><h2>'+esc(cursor.toLocaleDateString([],{month:'long',year:'numeric'}))+'</h2><span class="small-note">Local time</span></div><div class="cal-week"><span>Mon</span><span>Tue</span><span>Wed</span><span>Thu</span><span>Fri</span><span>Sat</span><span>Sun</span></div><div class="cal-grid">'+cells.join('')+'</div></section><section class="card day-card"><div class="calendar-title"><h2>'+esc(new Date(calendarSelected+'T12:00:00').toLocaleDateString([],{weekday:'long',day:'numeric',month:'long',year:'numeric'}))+'</h2><span class="tag">'+events.length+' EVENTS</span></div>'+(events.length?'<div class="timeline">'+events.map(e=>'<div class="timeline-item"><time>'+time(e.created_at)+'</time><div><div><span class="tag '+esc(e.state)+'">'+esc(e.state)+'</span> <strong>'+esc(e.project_name||'Workspace')+'</strong></div><p>'+esc(e.summary)+'</p>'+(e.path||e.cwd?'<code>'+esc(e.path||e.cwd)+'</code>':'')+'</div></div>').join('')+'</div>':'<div class="empty"><h3>No indexed work that day.</h3><p>Jobs will appear here automatically as PC Bridge records them.</p></div>')+(artifacts.length?'<div class="day-section"><h3>Files</h3>'+artifacts.map(a=>'<div class="vault-file"><span>'+esc(a.kind)+'</span><code>'+esc(a.path)+'</code>'+(a.sha256?'<small>SHA-256 '+esc(a.sha256.slice(0,16))+'…</small>':'')+'</div>').join('')+'</div>':'')+(snapshots.length?'<div class="day-section"><h3>Snapshots</h3>'+snapshots.map(s=>'<div class="vault-file"><span>'+esc(s.label)+'</span><code>'+esc(s.output_path||s.root||'')+'</code>'+(s.sha256?'<small>'+esc(s.sha256.slice(0,16))+'…</small>':'')+'</div>').join('')+'</div>':'')+'</section></div><p class="footer-note">Vault indexes metadata only. Files remain in their normal project locations; snapshots are additive evidence, not a replacement filesystem.</p>';}
 function rows(jobs){return jobs.map(j=>'<div class="job-row"><span class="tag '+esc(j.state)+'">'+esc(j.state)+'</span><div class="job-info"><strong>'+esc(jobTitle(j))+'</strong><small>'+esc(j.project_name)+(['process','project_task'].includes(j.kind)&&j.pid?' · PID '+j.pid:'')+' · '+time(j.created_at)+(j.restored?' · Restored':'')+'</small></div>'+button('review','View receipt','secondary','data-id="'+j.id+'"')+'</div>').join('');}
 function activity(){const jobs=[...state.jobs].reverse(),pending=jobs.filter(j=>j.state==='pending').length;return '<div class="page-heading"><div><div class="eyebrow">Execution receipts and approvals</div><h1>See what happened.</h1><p class="intro">'+(pending?pending+' action'+(pending===1?' is':'s are')+' waiting for your approval.':'Inspect outputs, cancellations and backed-up file edits here.')+'</p></div>'+button('export','Save diagnostic report','ghost')+'</div><div class="tip">'+state.receipts+' receipt events. Pending means nothing has executed yet. File-tool replacements receive backups; arbitrary command edits do not.</div>'+(jobs.length?'<div class="list">'+rows(jobs)+'</div>':'<div class="empty"><h3>Ready for your first request.</h3><p>Activity and approvals will appear here.</p></div>');}
-function review(id){
-  const j=state.jobs.find(j=>j.id===id);if(!j)return;reviewId=id;
+async function review(id){
+  const dialog=document.querySelector('#review'),request=++reviewRequest;
+  if(reviewId!==id||!dialog.open){
+    reviewId=id;
+    document.querySelector('#review-content').innerHTML='<div class="review-title"><h2>Action receipt</h2>'+button('close-review','Close','ghost')+'</div><p>Loading receipt…</p>';
+    if(!dialog.open)dialog.showModal();
+  }
+  let j;try{j=await call('jobDetail',{id});}catch{return;}
+  if(request!==reviewRequest||reviewId!==id||!dialog.open)return;
   document.querySelector('#review-content').innerHTML='<div class="review-title"><div><div class="eyebrow">'+esc(j.project_name)+'</div><h2>Action receipt</h2><span class="tag">'+esc(j.state)+'</span></div>'+button('close-review','Close','ghost')+'</div>'+
   (j.kind==='write'?'<p class="project-path">'+esc(j.path)+'</p><div class="review-columns"><div><h3>BEFORE</h3><pre>'+esc(j.before??'(New file)')+'</pre></div><div><h3>SUBMITTED TEXT</h3><pre class="after">'+esc(j.content)+'</pre></div></div>':'<pre>'+esc(j.command||j.task)+'</pre>')+
   (j.kind==='process'&&(j.stdout_tail||j.stderr_tail)?'<h3>Live managed output · untrusted data</h3><pre class="result">'+esc((j.stdout_tail||'')+(j.stderr_tail?'\n[stderr]\n'+j.stderr_tail:''))+'</pre>':'')+(j.result?'<h3>Actual result</h3><pre class="result">'+esc(JSON.stringify(j.result,null,2))+'</pre>':'')+(j.error?'<div class="callout error">'+esc(j.error)+'</div>':'')+
   '<div class="actions">'+(j.state==='pending'?button('approve','Approve & run','primary')+button('reject','Reject','danger-outline'):['queued','running'].includes(j.state)?button('reject','Cancel job','danger-outline'):'')+(j.kind==='write'&&j.before!==null&&j.state==='succeeded'&&!j.restored?button('restore','Restore previous text','secondary'):'')+'</div><p class="footer-note">Request '+esc(j.id)+'<br>Receipt '+esc(j.receipt_hash||'Not finished yet')+'</p>';
-  const dialog=document.querySelector('#review');if(!dialog.open)dialog.showModal();
 }
+document.querySelector('#review').addEventListener('close',()=>{reviewId=null;reviewRequest++;document.querySelector('#review-content').replaceChildren();});
 document.addEventListener('click',async event=>{
   const page=event.target.closest('[data-page]');if(page){current=page.dataset.page;render();if(current==='calendar')void loadCalendar();return;}
   const el=event.target.closest('[data-action]');if(!el||busy)return;
@@ -139,8 +151,19 @@ document.addEventListener('click',async event=>{
 document.addEventListener('change',async event=>{if(event.target?.id==='rail-workspace'){try{await call('setDefaultProject',{id:event.target.value});state=await call('state');render();toast('Active workspace changed.');}catch{}}else if(event.target?.classList?.contains('client-ceiling')){try{const result=await call('clientSetCeiling',{id:event.target.dataset.clientId,mode:event.target.value});state=await call('state');render();toast(result?.cancelled?'AI client ceiling unchanged.':'AI client ceiling updated locally.');}catch{state=await call('state');render();}}});
 document.querySelector('#sync-chat').addEventListener('click',async()=>{const el=document.querySelector('#sync-chat');try{el.disabled=true;const result=await call('chatReload',{force:true});toast(result?.reloaded?'Chat synced.':'Chat is still loading.');}catch{}finally{el.disabled=false;}});
 document.querySelector('#pause-top').addEventListener('click',async()=>{try{await call('pause');state=await call('state');render();toast('Access paused. Active jobs cancelled.');}catch{}});
-async function refreshFromBridge(){state=await call('state');render();if(current==='calendar')void loadCalendar();if(document.querySelector('#review').open)review(reviewId);}
-function queueBridgeRefresh(delay=120){clearTimeout(render.timer);render.timer=setTimeout(async()=>{if(clientControlActive()){deferredBridgeRefresh=true;return;}deferredBridgeRefresh=false;await refreshFromBridge();},delay);}
+let refreshInFlight=null,refreshAgain=false;
+async function refreshFromBridge(){
+  if(refreshInFlight){refreshAgain=true;return refreshInFlight;}
+  refreshInFlight=(async()=>{do{
+    refreshAgain=false;
+    state=await call('state');
+    if(clientControlActive()){deferredBridgeRefresh=true;continue;}
+    render();if(current==='calendar')void loadCalendar();
+    if(document.querySelector('#review').open)void review(reviewId);
+  }while(refreshAgain);})();
+  try{await refreshInFlight;}finally{refreshInFlight=null;}
+}
+function queueBridgeRefresh(delay=120){clearTimeout(render.timer);render.timer=setTimeout(()=>{if(clientControlActive()){deferredBridgeRefresh=true;return;}deferredBridgeRefresh=false;void refreshFromBridge().catch(()=>{});},delay);}
 document.addEventListener('focusout',()=>{if(!deferredBridgeRefresh)return;setTimeout(()=>{if(!clientControlActive()){deferredBridgeRefresh=false;queueBridgeRefresh(0);}},0);});
 window.bridge.onChange(()=>queueBridgeRefresh());
 state=await call('state');render();

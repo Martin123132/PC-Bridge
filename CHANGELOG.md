@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+
+- Reduce desktop memory use by sending job summaries during refresh and loading complete receipts only when opened. Saved history and approval controls are preserved.
+- Keep unchanged pages in place, reuse timestamp formatting, serialize refresh bursts, and release closed receipt content. Delayed receipt replies cannot replace a newer receipt or reopen a closed one.
+- Add synthetic regression tests for large history, rendering, receipt races, refresh recovery and the preload command boundary.
+
 ## v0.5.16 — public preview candidate
 
 ### Included

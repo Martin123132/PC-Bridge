@@ -3,6 +3,7 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 import path from 'node:path';
 import { mkdir, readFile, writeFile, unlink } from 'node:fs/promises';
 import { randomBytes } from 'node:crypto';
+import { summarizeUiJob } from '../src/ui-state.mjs';
 import { BridgeCore, atomicJson, redact } from '../src/core.mjs';
 import { makeMcpApp, makeRemoteMcpApp } from '../src/mcp.mjs';
 import { Tunnel } from './tunnel.mjs';
@@ -51,7 +52,7 @@ async function boot(){
   async function clearRemoteState(){rememberedRemote=null;for(const target of [remoteStatePath,remoteGuestIdentityPath]){try{await unlink(target);}catch(error){if(error.code!=='ENOENT')throw error;}}}
   const publicTunnel=new PublicTunnel({onGuestIdentity:persistRemoteGuestIdentity,onChange:()=>{changed();void persistRemoteState();}});
   core.on('change',changed);
-  const state=()=>{const remoteRecord=remoteClientRecordId?clients.record(remoteClientRecordId):null;return{...core.snapshot(),vault:vault.summary(),connection:{...tunnel.snapshot(),tunnel_id:settings.tunnelId,credential_saved:hasKey},remote_connection:{...publicTunnel.snapshot(),client_record_id:remoteClientRecordId,client_label:remoteRecord?.label??null,remembered:Boolean(rememberedRemote),remembered_url:rememberedRemote?.mcp_url??null},ai_clients:clients.snapshot(),data_dir:dataDir,packaged:app.isPackaged};};
+  const state=()=>{const remoteRecord=remoteClientRecordId?clients.record(remoteClientRecordId):null;const snapshot=core.snapshot();snapshot.jobs=snapshot.jobs.map(summarizeUiJob);return{...snapshot,vault:vault.summary(),connection:{...tunnel.snapshot(),tunnel_id:settings.tunnelId,credential_saved:hasKey},remote_connection:{...publicTunnel.snapshot(),client_record_id:remoteClientRecordId,client_label:remoteRecord?.label??null,remembered:Boolean(rememberedRemote),remembered_url:rememberedRemote?.mcp_url??null},ai_clients:clients.snapshot(),data_dir:dataDir,packaged:app.isPackaged};};
   const links={tunnels:'https://platform.openai.com/settings/organization/tunnels',keys:'https://platform.openai.com/settings/organization/api-keys',chatgpt:'https://chatgpt.com/',plugins:'https://chatgpt.com/plugins',docs:'https://developers.openai.com/api/docs/guides/secure-mcp-tunnels',claude:'https://claude.ai/customize/connectors'};
   const startLocal=async()=>{if(listener)return;const record=clients.record(CHATGPT_CLIENT_RECORD_ID);listener=await new Promise((resolve,reject)=>{const server=makeMcpApp(core,{token:localToken,client_id:record.client_id,provider:record.provider,max_access_mode:record.max_access_mode,policy_resolver:()=>clients.chatgptPolicy()}).listen(0,'127.0.0.1',()=>resolve(server));server.once('error',reject);});port=listener.address().port;};
   const stopLocal=async()=>{await core.pause({shutdown:true});await tunnel.stop();if(listener){const old=listener;listener=null;old.closeAllConnections();await new Promise(resolve=>old.close(resolve));}};
@@ -142,6 +143,7 @@ async function boot(){
     if(event.sender!==win.webContents || event.senderFrame!==win.webContents.mainFrame || event.senderFrame.url!=='pcbridge://app/')throw Error('Untrusted app frame.');
     try{
       switch(command){
+        case 'jobDetail':{const job=core.jobs.find(j=>j.id===data?.id);if(!job)throw Error('Receipt not found.');return job;}
         case 'state':return state();
         case 'chatView':return setChatVisible(Boolean(data?.visible));
         case 'chatReload':return reloadChat({force:Boolean(data?.force)});
