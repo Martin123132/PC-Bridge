@@ -3,7 +3,7 @@ import { createHash, randomUUID, randomBytes } from 'node:crypto';
 import { mkdir, readFile, writeFile, rename, lstat, realpath, readdir, open, rm } from 'node:fs/promises';
 import path from 'node:path';
 import os from 'node:os';
-import { spawn } from 'node:child_process';
+import { spawnContained as spawn } from './chaff-spawn.mjs';
 import { isUtf8 } from 'node:buffer';
 import { runCommand, runManagedCommand, runManagedNodeTask } from './commands.mjs';
 import { gitStatus as readGitStatus, gitDiff as readGitDiff, createGitCheckpoint, rollbackGitCheckpoint } from './git.mjs';
@@ -21,16 +21,28 @@ const MUTATING_KINDS = new Set(['write','test','project_task','command','process
 const EXECUTION_KINDS = new Set(['test','project_task','command','process']);
 const ARBITRARY_EXECUTION_KINDS = new Set(['command','process']);
 const PROCESS_LIKE_KINDS = new Set(['process','project_task']);
+const DEFAULT_JOB_LIMITS = Object.freeze({max_active_requests:20,max_background_services:2});
+const activeState = job => ['pending','queued','running'].includes(job.state);
+const isBackground = job => job.kind==='process' && job.scheduling_class==='background_service';
+const queueLane = job => isBackground(job)?`background-service:${job.id}`:(job.lane_key??job.project_id);
+const serviceApprovalIdentity = job => digest(JSON.stringify([job.id,job.signature,job.shell,job.command,job.cwd,job.max_runtime_seconds,job.service_name,job.scheduling_class]));
+function validateJobLimits(value){
+  if(!value||!Number.isInteger(value.max_active_requests)||value.max_active_requests<1||value.max_active_requests>64||!Number.isInteger(value.max_background_services)||value.max_background_services<0||value.max_background_services>8||value.max_background_services>value.max_active_requests)throw Error('Choose 1–64 active requests and 0–8 background services, no more than the active-request limit.');
+  return {max_active_requests:value.max_active_requests,max_background_services:value.max_background_services};
+}
 const inside=(root,target)=>{const rel=path.relative(root,target);return rel===''||(!rel.startsWith('..'+path.sep)&&rel!=='..'&&!path.isAbsolute(rel));};
 async function nearestGitRoot(start){let current=path.resolve(start);for(;;){try{const info=await lstat(path.join(current,'.git'));if(info.isDirectory()||info.isFile())return current;}catch{}const parent=path.dirname(current);if(parent===current)return null;current=parent;}}
 
-export function relativeName(name) {
-  if (typeof name !== 'string' || name.length > 200 || /[\\:\x00-\x1f]/.test(name) || path.posix.isAbsolute(name)) throw Error('Use a relative path with forward slashes.');
+function validateSourceName(name, maxDepth = 10, maxLength = 200) {
+  if (typeof name !== 'string' || name.length > maxLength || /[\\:\x00-\x1f]/.test(name) || path.posix.isAbsolute(name)) throw Error('Use a relative path with forward slashes.');
   const parts = name.split('/');
-  if (!parts.length || parts.length > 10 || parts.some(p => !p || p === '..' || p.endsWith('.') || p.endsWith(' ') || /[<>"|?*]/.test(p) || blocked.test(p) || /^(con|prn|aux|nul|com[1-9]|lpt[1-9])(?:\.|$)/i.test(p))) throw Error('This path is outside the permitted source-file rules.');
+  if (parts.length > maxDepth) throw Error(`Source path exceeds the ${maxDepth}-component depth limit.`);
+  if (!parts.length || parts.some(p => !p || p === '..' || p.endsWith('.') || p.endsWith(' ') || /[<>"|?*]/.test(p) || blocked.test(p) || /^(con|prn|aux|nul|com[1-9]|lpt[1-9])(?:\.|$)/i.test(p))) throw Error('This path is outside the permitted source-file rules.');
   if (!allowedExt.has(path.extname(name).toLowerCase())) throw Error('Only supported text/source file types are accessible.');
   return name;
 }
+
+export function relativeName(name) { return validateSourceName(name); }
 
 export async function atomicJson(filename, value) {
   const temp = `${filename}.${randomUUID()}.tmp`;
@@ -44,6 +56,7 @@ export class BridgeCore extends EventEmitter {
     this.projects = []; this.jobs = []; this.checkpoints = []; this.leaseUntil = 0; this.lastSeen = null; this.verifiedAt = null;
     this.verificationCode = randomBytes(4).toString('hex').toUpperCase(); this.auditHash = '0'.repeat(64); this.auditCount = 0;
     this.queue = Promise.resolve(); this.controllers = new Map(); this.instance = randomUUID();
+    this.jobLimits = {...DEFAULT_JOB_LIMITS};
     this.workspaceDir = workspaceDir; this.trustedAccess = false; this.accessMode = 'full'; this.fullAccessAcknowledged = false; this.defaultProjectId = null; this.workspaceProjectId = null;
     this.commandRunner = commandRunner; this.processRunner = processRunner; this.taskRunner = taskRunner; this.executions = new Map(); this.projectQueues = new Map(); this.vault = vault; this.vaultError = null;
     this.workspaceGuard=randomBytes(16).toString('hex');this.workspaceGuardExpiresAt=0;
@@ -55,6 +68,7 @@ export class BridgeCore extends EventEmitter {
       const saved = JSON.parse(await readFile(path.join(this.dataDir, 'workspace-state.json'), 'utf8'));
       if (saved.version !== 1 || !Array.isArray(saved.projects) || !Array.isArray(saved.jobs)) throw Error('Invalid saved state.');
       this.projects = saved.projects; this.jobs = saved.jobs; this.checkpoints = Array.isArray(saved.checkpoints) ? saved.checkpoints : [];
+      this.jobLimits = saved.job_limits===undefined?{...DEFAULT_JOB_LIMITS}:validateJobLimits(saved.job_limits);
       for (const project of this.projects) { if (!Array.isArray(project.project_tasks)) project.project_tasks=[]; if (!project.task_grant || typeof project.task_grant!=='object') project.task_grant=null; }
       this.trustedAccess = saved.trusted_access === true; this.accessMode = ACCESS_MODES.has(saved.access_mode) ? saved.access_mode : 'full'; this.fullAccessAcknowledged = saved.full_access_acknowledged === true; if(this.trustedAccess&&this.accessMode==='full'&&!this.fullAccessAcknowledged)this.trustedAccess=false; this.defaultProjectId = saved.default_project_id ?? null;
       for (const job of this.jobs) if (['pending','queued','running'].includes(job.state)) { job.state = 'interrupted'; job.error = 'App restarted. Check the result before submitting a new request; interrupted work is never replayed.'; }
@@ -75,7 +89,15 @@ export class BridgeCore extends EventEmitter {
     await this.save(); return this;
   }
   serial(operation) { const next = this.queue.then(operation); this.queue = next.catch(() => {}); return next; }
-  async save() { await atomicJson(path.join(this.dataDir, 'workspace-state.json'), { version: 1, trusted_access: this.trustedAccess, access_mode: this.accessMode, full_access_acknowledged: this.fullAccessAcknowledged, default_project_id: this.defaultProjectId, projects: this.projects, jobs: this.jobs, checkpoints: this.checkpoints.slice(-20) }); try{this.vault?.sync({projects:this.projects,jobs:this.jobs,checkpoints:this.checkpoints});this.vaultError=null;}catch(error){this.vaultError=redact(error.message);} this.emit('change'); }
+  async save() { await atomicJson(path.join(this.dataDir, 'workspace-state.json'), { version: 1, job_limits:this.jobLimits, trusted_access: this.trustedAccess, access_mode: this.accessMode, full_access_acknowledged: this.fullAccessAcknowledged, default_project_id: this.defaultProjectId, projects: this.projects, jobs: this.jobs, checkpoints: this.checkpoints.slice(-20) }); try{this.vault?.sync({projects:this.projects,jobs:this.jobs,checkpoints:this.checkpoints});this.vaultError=null;}catch(error){this.vaultError=redact(error.message);} this.emit('change'); }
+  jobCapacity(){
+    const active=this.jobs.filter(j=>activeState(j)||this.executions.has(j.id)||this.controllers.has(j.id));
+    return {...this.jobLimits,active_requests:active.length,background_services:active.filter(isBackground).length,foreground_running:active.filter(j=>!isBackground(j)&&j.state==='running').length,waiting:active.filter(j=>['pending','queued'].includes(j.state)).length};
+  }
+  async setJobLimits(limits){
+    const validated=validateJobLimits(limits);
+    return this.serial(async()=>{this.jobLimits=validated;await this.receipt('local_job_limits_changed',validated);await this.save();return this.jobCapacity();});
+  }
   async receipt(type, details = {}) {
     const body = { time: now(), previous: this.auditHash, type, ...details };
     const hash = digest(JSON.stringify(body));
@@ -143,7 +165,7 @@ export class BridgeCore extends EventEmitter {
   status() {
     const enabled=this.trustedAccess || Date.now() < this.leaseUntil;
     const modeText=this.accessMode==='full'?'Full access: reads, writes, commands, tests and managed processes can run directly as your Windows user.':this.accessMode==='project_tasks'?'Project Tasks: protected file edits plus locally pinned project tasks/tests may run; arbitrary PowerShell, cmd, Node command text and arbitrary managed processes are blocked.':this.accessMode==='files_only'?'Files only: shared workspace file reads/writes are available with file-tool protections; commands, tests, project tasks and managed processes are blocked locally.':this.accessMode==='read_only'?'Read only: shared workspace text can be listed/read; writes and execution are blocked.':'Read + approve changes: reads are automatic; every write, command, test, project task and managed process waits for local approval before execution.';
-    let vault_summary=null;try{vault_summary=this.vault?.summary()??null;}catch{} return { app:'PC Bridge', version:'0.5.16', instance_id:this.instance, access_enabled:enabled, access_expires_at:this.trustedAccess?null:this.leaseUntil?new Date(this.leaseUntil).toISOString():null, access_mode:this.accessMode, projects:this.publicProjects(), default_project_id:this.defaultProjectId, workspace_path:this.project().root, local_approval_required:this.accessMode==='approve_changes', arbitrary_shell_available:['full','approve_changes'].includes(this.accessMode), project_task_execution_available:['full','approve_changes','project_tasks'].includes(this.accessMode), vault_available:Boolean(this.vault), vault_summary, build_channel:'private-alpha', full_access_acknowledged:this.fullAccessAcknowledged, workspace_guard_required_for_implicit_remote_project:true, access_model:modeText+' PC Bridge is not an OS sandbox; Pause access revokes all work.' };
+    let vault_summary=null;try{vault_summary=this.vault?.summary()??null;}catch{} return { app:'PC Bridge', version:'0.5.16', instance_id:this.instance, access_enabled:enabled, access_expires_at:this.trustedAccess?null:this.leaseUntil?new Date(this.leaseUntil).toISOString():null, access_mode:this.accessMode, projects:this.publicProjects(), default_project_id:this.defaultProjectId, workspace_path:this.project().root, local_approval_required:this.accessMode==='approve_changes', arbitrary_shell_available:['full','approve_changes'].includes(this.accessMode), background_service_available:enabled&&['full','approve_changes'].includes(this.accessMode)&&this.jobLimits.max_background_services>0, job_capacity:this.jobCapacity(), scheduling_policy:'Ordinary jobs serialize per Git/workspace root. Background services use independent lanes only after explicit local approval of each command; they are not read-only or sandboxed. Limits are owner-only and apply to new requests.', project_task_execution_available:['full','approve_changes','project_tasks'].includes(this.accessMode), vault_available:Boolean(this.vault), vault_summary, build_channel:'private-alpha', full_access_acknowledged:this.fullAccessAcknowledged, workspace_guard_required_for_implicit_remote_project:true, access_model:modeText+' PC Bridge is not an OS sandbox; Pause access revokes all work.' };
   }
   snapshot() { return { ...this.status(), projects: this.projects, jobs: this.jobs.map(j => ({ ...j, content: j.content, before: j.before })), checkpoints: this.checkpoints.slice(-20), vault_error:this.vaultError, last_seen: this.lastSeen, verified_at: this.verifiedAt, verification_code: this.verificationCode, receipts: this.auditCount, receipt_head: this.auditHash }; }
   async addProject(root, name, task = null) {
@@ -230,11 +252,13 @@ export class BridgeCore extends EventEmitter {
     const project = this.project(id);
     // Absolute local paths are available under the saved trusted-PC choice. The
     // source-file checks reduce accidents, but commands are deliberately not jailed.
+    if (typeof filename !== 'string' || filename.length > 1024) throw Error('Source path must be text of at most 1024 characters.');
     const absolute = path.isAbsolute(filename);
     if (absolute) {
       if (!this.trustedAccess || this.accessMode !== 'full' || /^[/\\]{2}/.test(filename)) throw Error('Absolute local paths require Full access; network/device paths are not supported.');
       const resolved = path.resolve(filename); const base = path.parse(resolved).root;
-      relativeName(path.relative(base, resolved).split(path.sep).join('/'));
+      // Only already-authorized Full-access absolute paths get the larger bounds.
+      validateSourceName(path.relative(base, resolved).split(path.sep).join('/'), 32, 1024);
     } else relativeName(filename);
     const rootInfo = await lstat(project.root);
     if (rootInfo.isSymbolicLink() || `${rootInfo.dev}:${rootInfo.ino}` !== project.identity || await realpath(project.root) !== project.root) throw Error('Shared folder identity changed. Share it again locally.');
@@ -300,7 +324,14 @@ export class BridgeCore extends EventEmitter {
       const signature = digest(JSON.stringify({ kind, ...input }));
       const existing = this.jobs.find(j => j.request_key === input.request_key);
       if (existing) { if(existing.signature !== signature) throw Error('request_key was already used for different input.'); return this.publicJob(existing); }
-      if (this.jobs.filter(j => ['pending','queued','running'].includes(j.state)).length >= 20) throw Error('20 requests are already active. Wait for them to finish.');
+      const capacity=this.jobCapacity();
+      if(capacity.active_requests>=this.jobLimits.max_active_requests)throw Error(`${this.jobLimits.max_active_requests} requests are already active. Wait, cancel an unneeded job, or change Job limits locally in Activity.`);
+      if(input.background_service!==undefined&&typeof input.background_service!=='boolean')throw Error('background_service must be a boolean.');
+      const background=input.background_service===true;
+      if(background&&kind!=='process')throw Error('Only managed processes support background services.');
+      if(background&&(typeof input.service_name!=='string'||!input.service_name.trim()||input.service_name.length>80||/[\x00-\x1f\x7f]/.test(input.service_name)))throw Error('Give the background service a short, readable name (1–80 characters).');
+      if(!background&&input.service_name!==undefined)throw Error('service_name is only used for a background service.');
+      if(background&&capacity.background_services>=this.jobLimits.max_background_services)throw Error('Background-service limit reached or disabled. Stop an unneeded service or change Job limits locally in Activity.');
       let extra; let lane_key=project.root.toLowerCase();
       if (kind === 'write') {
         if (typeof input.content !== 'string' || Buffer.byteLength(input.content) > MAX_FILE || looksSecret(input.content) || input.content.includes('\0')) throw Error('Content is oversized, binary or may contain credentials.');
@@ -327,11 +358,16 @@ export class BridgeCore extends EventEmitter {
         if (!['powershell','cmd','node'].includes(input.shell) || typeof input.command !== 'string' || !input.command.trim() || input.command.length > 32768 || input.command.includes('\0') || looksSecret(input.command)) throw Error('Choose powershell, cmd or node and provide command text without embedded credentials (maximum 32768 characters).');
         const cwd = path.resolve(project.root, input.cwd || '.');
         if (/^[/\\]{2}/.test(cwd) || !(await lstat(cwd)).isDirectory() || await realpath(cwd) !== cwd) throw Error('Choose an existing local working folder, not a linked or network folder.');
+        if(background){
+          const broad=[path.parse(cwd).root,os.homedir(),process.env.SystemRoot,process.env.ProgramFiles,process.env['ProgramFiles(x86)']].filter(Boolean).map(p=>path.resolve(p).toLowerCase());
+          if(broad.includes(cwd.toLowerCase())||(inside(this.dataDir,cwd)&&!inside(this.workspaceDir,cwd)))throw Error('Background services need a specific project working folder, not a drive root, home, system or Bridge data folder.');
+        }
         lane_key=(await this.executionLane(project,cwd)).toLowerCase();
         if(kind==='command'){const timeout=input.timeout_seconds??60;if(!Number.isInteger(timeout)||timeout<1||timeout>300)throw Error('Command timeout must be 1–300 seconds.');extra={shell:input.shell,command:input.command,cwd,timeout_seconds:timeout};}
         else {const max_runtime=input.max_runtime_seconds??3600;if(!Number.isInteger(max_runtime)||max_runtime<1||max_runtime>21600)throw Error('Managed process runtime must be 1–21600 seconds.');extra={shell:input.shell,command:input.command,cwd,max_runtime_seconds:max_runtime,stdout_tail:'',stderr_tail:'',output_truncated:false};}
       } else throw Error('Unknown request type.');
-      const needsApproval = MUTATING_KINDS.has(kind) && this.accessMode === 'approve_changes';
+      if(background)extra={...extra,scheduling_class:'background_service',service_name:input.service_name.trim()};
+      const needsApproval = background || (MUTATING_KINDS.has(kind) && this.accessMode === 'approve_changes');
       const job = { id: randomUUID(), kind, project_id: project.id, project_name: project.name, lane_key, request_key: input.request_key, signature, source_client_id, source_provider, source_transport, state: needsApproval ? 'pending' : 'queued', approved: !needsApproval, created_at: now(), expires_at: new Date(Date.now()+JOB_TTL).toISOString(), ...extra };
       await this.receipt(needsApproval ? 'request_pending_approval' : 'request_queued', { job_id: job.id, project_id: project.id, kind, input_sha256: signature, source_client_id, source_provider, source_transport });
       this.jobs.push(job); await this.save(); return this.publicJob(job);
@@ -341,7 +377,7 @@ export class BridgeCore extends EventEmitter {
     const job=this.jobs.find(j=>j.id===id); if(!job)throw Error('Job not found.');
     let execution=this.executions.get(id);
     if(!execution && job.state==='queued'){
-      const lane=job.lane_key??job.project_id;
+      const lane=queueLane(job);
       const previous=this.projectQueues.get(lane) ?? Promise.resolve();
       execution=previous.catch(()=>{}).then(()=>this.execute(id)).catch(async error=>{
         await this.serial(async()=>{const current=this.jobs.find(j=>j.id===id);if(current?.state==='queued'){current.state='failed';current.error=redact(error.message);await this.receipt('request_failed',{job_id:id});await this.save();}});
@@ -349,7 +385,7 @@ export class BridgeCore extends EventEmitter {
       this.executions.set(id,execution);this.projectQueues.set(lane,execution);
       void execution.finally(()=>{this.executions.delete(id);if(this.projectQueues.get(lane)===execution)this.projectQueues.delete(lane);}).catch(()=>{});
     }
-    if(execution){if(wait||job.kind==='write')await execution;else await Promise.race([execution,new Promise(resolve=>setTimeout(resolve,200))]);}
+    if(execution){if(wait)await execution;else await Promise.race([execution,new Promise(resolve=>setTimeout(resolve,200))]);}
     return this.getJob(id);
   }
   async submit(kind,input,{wait=false}={}){
@@ -357,7 +393,7 @@ export class BridgeCore extends EventEmitter {
     if(prepared.state==='queued')return this.schedule(prepared.id,{wait});
     return this.getJob(prepared.id);
   }
-  async approve(id){
+  async approve(id,{backgroundConfirmed=false}={}){
     const prepared=await this.serial(async()=>{
       this.checkAccess();const job=this.jobs.find(j=>j.id===id);if(!job)throw Error('Job not found.');
       if(job.state!=='pending')return this.publicJob(job);
@@ -365,11 +401,21 @@ export class BridgeCore extends EventEmitter {
       if(this.accessMode==='files_only'&&EXECUTION_KINDS.has(job.kind))throw Error('Files only mode blocks commands, tests, project tasks and managed processes.');
       if(this.accessMode==='project_tasks'&&ARBITRARY_EXECUTION_KINDS.has(job.kind))throw Error('Project Tasks mode blocks arbitrary commands and managed processes.');
       if(Date.now()>Date.parse(job.expires_at)){job.state='expired';await this.save();return this.publicJob(job);}
+      if(isBackground(job)){
+        if(backgroundConfirmed!==true)throw Error('Confirm this exact background service locally. It runs alongside other work as your Windows user, not in a sandbox.');
+        job.background_approval_identity=serviceApprovalIdentity(job);
+        await this.receipt('background_service_approved',{job_id:id,approval_identity:job.background_approval_identity,command_sha256:digest(job.command),cwd:job.cwd,max_runtime_seconds:job.max_runtime_seconds});
+      }
       job.approved=true;job.state='queued';await this.receipt('request_approved',{job_id:id,kind:job.kind});await this.save();return this.publicJob(job);
     });
-    return prepared.state==='queued'?this.schedule(id,{wait:prepared.kind==='write'}):prepared;
+    return prepared.state==='queued'?this.schedule(id,{wait:false}):prepared;
   }
-  publicJob(job) { const { id, kind, state, project_id, path: filename, created_at, expires_at, result, error, receipt_hash, lane_key, pid, process_started_at, process_finished_at, stdout_tail, stderr_tail, output_truncated, source_client_id, source_provider, source_transport } = job; const next=state==='pending'?'Waiting for local approval in PC Bridge. Nothing has executed yet.':['queued','running'].includes(state)?(kind==='process'?'Managed process is active or queued. Use bridge_process_status for live PID/output without joining its execution queue.':'Running automatically. Check bridge_get_job for the actual result.'):undefined; return { id, kind, state, project_id, path: filename, created_at, expires_at, result, error, receipt_hash, lane_key, pid, process_started_at, process_finished_at, stdout_tail, stderr_tail, output_truncated, source_client_id, source_provider, source_transport, requires_approval:state==='pending', provenance:PROCESS_LIKE_KINDS.has(kind)?'untrusted_process_output':undefined, instruction_authority:PROCESS_LIKE_KINDS.has(kind)?false:undefined, next }; }
+  publicJob(job) {
+    const { id, kind, state, project_id, path: filename, created_at, expires_at, result, error, receipt_hash, lane_key, pid, process_started_at, process_finished_at, stdout_tail, stderr_tail, output_truncated, source_client_id, source_provider, source_transport } = job;
+    const next=state==='pending'?'Waiting for local approval in PC Bridge. Nothing has executed yet.':['queued','running'].includes(state)?(kind==='process'?'Managed process is active or queued. Use bridge_process_status for live PID/output without joining its execution queue.':'Running automatically. Check bridge_get_job for the actual result.'):undefined;
+    const blocker=state==='queued'?this.jobs.find(j=>j.id!==id&&j.state==='running'&&queueLane(j)===queueLane(job)):null;
+    return { id, kind, state, project_id, path: filename, created_at, expires_at, result, error, receipt_hash, lane_key, pid, process_started_at, process_finished_at, stdout_tail, stderr_tail, output_truncated, source_client_id, source_provider, source_transport, scheduling_class:isBackground(job)?'background_service':'ordinary',service_name:job.service_name,waiting_on_job_id:blocker?.id, requires_approval:state==='pending', provenance:PROCESS_LIKE_KINDS.has(kind)?'untrusted_process_output':undefined, instruction_authority:PROCESS_LIKE_KINDS.has(kind)?false:undefined, next };
+  }
   getJob(id) { this.checkAccess(); const job = this.jobs.find(j => j.id === id); if (!job) throw Error('Job not found.'); this.project(job.project_id); return this.publicJob(job); }
   processStatus(id){const job=this.jobs.find(j=>j.id===id);if(!job||!PROCESS_LIKE_KINDS.has(job.kind))throw Error('Managed process or project task not found.');this.checkAccess();return this.publicJob(job);}
   vaultDay(day){this.checkAccess();if(!this.vault)throw Error('Vault is unavailable.');return {...this.vault.day(day),provenance:'untrusted_vault_metadata',instruction_authority:false};}
@@ -402,7 +448,8 @@ export class BridgeCore extends EventEmitter {
       if(MUTATING_KINDS.has(job.kind) && this.accessMode==='approve_changes' && job.approved!==true){job.state='pending';await this.save();throw Error('Local approval is required before execution.');}
       if(Date.now() > Date.parse(job.expires_at)) {job.state='expired'; await this.save(); throw Error('Request expired. Ask the connected AI to submit a new request.');}
       const project=this.project(job.project_id);
-      if(this.jobs.some(j=>j.id!==job.id && (j.lane_key??j.project_id)===(job.lane_key??job.project_id) && j.state==='running')) throw Error('Another job is running in this execution lane.');
+      if(isBackground(job)&&(!job.approved||job.background_approval_identity!==serviceApprovalIdentity(job)))throw Error('Background service has no matching local approval. Nothing was executed.');
+      if(this.jobs.some(j=>j.id!==job.id && queueLane(j)===queueLane(job) && j.state==='running')) throw Error('Another job is running in this execution lane.');
       if(job.kind==='test' && (project.task!==job.task || await this.fingerprint(project.id)!==job.fingerprint)) throw Error('Project changed since the test request. Submit a fresh request.');
       if(job.kind==='test'&&this.accessMode==='project_tasks'){const grant=project.task_grant;const taskSha=(await this.read(project.id,job.task)).sha256;if(!grant||grant.path!==job.task||grant.sha256!==taskSha||grant.project_fingerprint!==job.fingerprint)throw Error('The saved test is no longer covered by its local Project Tasks grant.');}
       if(job.kind==='project_task'){const grant=(project.project_tasks||[]).find(t=>t.id===job.task_id);const taskSha=grant?(await this.read(project.id,grant.path)).sha256:null;const fingerprint=grant?await this.fingerprint(project.id):null;if(!grant||grant.path!==job.task||grant.sha256!==job.task_sha256||taskSha!==job.task_sha256||fingerprint!==job.grant_fingerprint||grant.project_fingerprint!==job.grant_fingerprint)throw Error('Project task grant changed or became stale before execution. Nothing was run.');}
@@ -471,7 +518,7 @@ export function runNodeTests({root,task,nodeExecutable,electronNode,signal}) {
     if(electronNode)env.ELECTRON_RUN_AS_NODE='1';
     const child=spawn(nodeExecutable,['--test','--test-isolation=none',task],{cwd:root,env,windowsHide:true,stdio:['ignore','pipe','pipe'],shell:false});
     let stdout='',stderr='',total=0,stopped=null;
-    const stop=reason=>{if(stopped)return;stopped=reason;if(process.platform==='win32' && child.pid){const killer=spawn(path.join(process.env.SystemRoot||'C:\\Windows','System32','taskkill.exe'),['/PID',String(child.pid),'/T','/F'],{windowsHide:true,stdio:'ignore'});killer.on('error',()=>child.kill());}else child.kill('SIGKILL');};
+    const stop=reason=>{if(stopped)return;stopped=reason;child.kill();};
     const abort=()=>stop('Cancelled or access expired.'); signal?.addEventListener('abort',abort,{once:true});if(signal?.aborted)abort();
     const timeout=setTimeout(()=>stop('Test exceeded the 30-second limit.'),30000);
     const collect=kind=>chunk=>{total+=chunk.length;if(total>65536){stop('Test exceeded the output limit.');return;}if(kind==='stdout')stdout+=chunk.toString();else stderr+=chunk.toString();};

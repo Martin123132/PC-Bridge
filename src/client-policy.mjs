@@ -26,12 +26,13 @@ const clean=(value,fallback,max)=>String(value||fallback).replace(/[^A-Za-z0-9._
 
 export function makeClientPolicy({id,provider,transport,maxAccessMode}={}){
   const remote=transport==='remote-mcp';
-  const mode=maxAccessMode??(remote?'read_only':'full');
+  const shortcuts=transport==='local-shortcuts';
+  const mode=maxAccessMode??(remote||shortcuts?'read_only':'full');
   if(!Object.hasOwn(MODE_CAPABILITIES,mode))throw Error('Invalid client access ceiling.');
   return Object.freeze({
     id:clean(id,remote?'standard-chat':'openai-tunnel',80),
     provider:clean(provider,remote?'remote':'openai',40),
-    transport:remote?'remote-mcp':'openai-tunnel',
+    transport:shortcuts?'local-shortcuts':remote?'remote-mcp':'openai-tunnel',
     max_access_mode:mode
   });
 }
@@ -61,12 +62,14 @@ export function statusForClient(status,policy){
     protected_file_write_available:writeGlobally&&clientAllows(policy,'write'),
     project_task_execution_available:Boolean(status.project_task_execution_available&&pinnedGlobally&&clientAllows(policy,'pinned_exec')),
     arbitrary_shell_available:Boolean(status.arbitrary_shell_available&&arbitraryGlobally&&clientAllows(policy,'arbitrary_exec')),
+    background_service_available:Boolean(status.background_service_available&&arbitraryGlobally&&clientAllows(policy,'arbitrary_exec')),
     client_policy:publicClientPolicy(policy),
     client_policy_rule:'The global PC Bridge access mode and this client ceiling both apply. The stricter boundary wins.'
   };
 }
 
 export function capabilityForTool(name){
+  if(['bridge_protected_shell','bridge_protected_review'].includes(name))return 'arbitrary_exec';
   if(['bridge_write_file','bridge_propose_write'].includes(name))return 'write';
   if(['bridge_request_test','bridge_run_project_task'].includes(name))return 'pinned_exec';
   if(['bridge_run_command','bridge_launch_process'].includes(name))return 'arbitrary_exec';

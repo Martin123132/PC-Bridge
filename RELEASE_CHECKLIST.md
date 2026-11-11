@@ -11,4 +11,4 @@
 - [ ] Tutorial video contains no private account data.
 - [ ] README screenshots/video match the current UI.
 - [ ] Third-party notices are intact.
-- [ ] Repository visibility is still PRIVATE until the final review is complete.
+- [ ] Public repository diff contains no live pairing key, private local address, credentials, personal application state or private screenshot.

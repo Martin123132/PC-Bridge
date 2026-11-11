@@ -8,17 +8,17 @@ const source=await readFile(new URL('../ui/app.js',import.meta.url),'utf8');
 const tick=()=>new Promise(resolve=>setImmediate(resolve));
 const deferred=()=>{let resolve,reject;const promise=new Promise((a,b)=>{resolve=a;reject=b;});return {promise,resolve,reject};};
 const job={id:'example-job',kind:'write',state:'succeeded',path:'example.txt',project_name:'Example',created_at:'2026-01-01T12:00:00Z',content:'Submitted <text>',before:'Previous text',result:{output:'Full result'},command:'example command',stderr_tail:'error output',stdout_tail:'last output',receipt_hash:'example-hash'};
-function snapshot(){return {jobs:[summarizeUiJob(job)],projects:[],checkpoints:[],receipts:1,connection:{ready:false,state:'stopped'},ai_clients:{clients:[]},access_mode:'read_only',access_enabled:false};}
+function snapshot(){return {jobs:[summarizeUiJob(job)],projects:[],checkpoints:[],receipts:1,connection:{ready:false,state:'stopped'},ai_clients:{clients:[]},access_mode:'read_only',access_enabled:false,chaff_protection:{version:1,state:'ordinary',host_routes_blocked:false}};}
 async function renderer(call=async command=>command==='state'?snapshot():job){
   const elements=new Map();
   for(const id of ['main','activity-rail','connection-pill','access-label','build-badge','pause-top','sync-chat','review','review-content','toast']){
     const listeners=new Map();let html='';
-    elements.set('#'+id,{writes:0,open:false,classList:{toggle(){}},addEventListener:(type,fn)=>listeners.set(type,fn),
+    elements.set('#'+id,{writes:0,open:false,dataset:{},classList:{toggle(){}},addEventListener:(type,fn)=>listeners.set(type,fn),
       get innerHTML(){return html;},set innerHTML(value){html=value;this.writes++;},
       replaceChildren(){this.innerHTML='';},showModal(){this.open=true;},close(){this.open=false;listeners.get('close')?.();}});
   }
   const context=vm.createContext({document:{activeElement:null,querySelector:s=>elements.get(s)||null,querySelectorAll:()=>[],addEventListener(){}},
-    window:{bridge:{call,onChange(){}}},setTimeout:()=>1,clearTimeout(){},Intl,Date});
+    window:{bridge:{call,onChange(){}}},setTimeout:()=>1,clearTimeout(){},setInterval:()=>1,clearInterval(){},Intl,Date});
   const ui=await vm.runInContext(`(async()=>{${source}\nreturn {review,refreshFromBridge,time,setPage(page){current=page;render();},setState(next){state=next;render();}};})()`,context);
   return {ui,elements};
 }
@@ -93,4 +93,20 @@ test('preload exposes receipt lookup through the existing IPC channel only',asyn
   assert.equal(await bridge.call('jobDetail',{id:job.id}),job);
   assert.deepEqual(JSON.parse(JSON.stringify(invoked)),[['pc-bridge','jobDetail',{id:job.id}]]);
   await assert.rejects(bridge.call('arbitrary-command'),/Unsupported action/);
+});
+
+test('Connect Siri page is opt-in and never reveals its pairing secret in normal state',async()=>{
+  const {ui,elements}=await renderer();
+  const main=elements.get('#main');
+  ui.setPage('siri');
+  assert.match(main.innerHTML,/Siri&#39;s virtual phone|Siri.s virtual phone/);
+  assert.match(main.innerHTML,/Start Siri connection/);
+  assert.match(main.innerHTML,/Choose build evidence folder/);
+  assert.doesNotMatch(main.innerHTML,/[a-f0-9]{64}/);
+  const next={...snapshot(),siri_connection:{ready:true,host:'192.168.50.123',port:48764,address:'http://192.168.50.123:48764/v1/action'},ai_clients:{clients:[{id:'siri-shortcuts-local',client_id:'siri-shortcuts',max_access_mode:'read_only'}]}};
+  ui.setState(next);
+  assert.match(main.innerHTML,/Stop connection/);
+  assert.match(main.innerHTML,/Siri maximum authority/);
+  assert.match(main.innerHTML,/Show private pairing details/);
+  assert.doesNotMatch(main.innerHTML,/private pairing details — do not share screenshots of these/);
 });

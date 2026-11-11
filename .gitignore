@@ -14,3 +14,13 @@ ai-clients.json
 *.encrypted
 smoke-result.json
 tunnel-health-*.url
+
+.env
+.env.*
+*.pfx
+*.p12
+*.pem
+*.key
+*.asar
+*.zip
+*pairing-key*

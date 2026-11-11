@@ -23,3 +23,9 @@ The repository includes a release verifier that checks for several common accide
 PC Bridge enforces both a global access mode and a per-client authority ceiling. The stricter boundary wins. Use the lowest authority that fits the task.
 
 Full access can execute commands as the signed-in Windows user. PC Bridge is not an operating-system sandbox.
+
+## Siri source publication and pairing data
+
+The public source does not include a user's pairing key, actual private LAN address, personal Shortcut export, Windows profile data or connector credentials. Pairing keys are stored by the installed PC Bridge and entered into the owner's Shortcut locally.
+
+The experimental Siri endpoint uses local HTTP on a trusted private network rather than encrypted internet transport. Do not expose that port publicly. Publication audits should check code, tests, examples, documentation, packaged assets and local untracked files before staging.
