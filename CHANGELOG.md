@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+- Add a Siri Virtual Phone page and opt-in Apple Shortcuts listener to the existing Windows app, with a distinct local Siri client identity.
+- Add fixed Apple Music and Google search actions, live Windows/Codex status, local build-evidence checks and recent Activity display.
+- Verify a stable visible Apple Music window before reporting launch success; add Siri parser, permission, receipt and UI regression tests.
+- Preserve the latest protected execution, work-session controls and shared Calendar.
+- Publish source preview first; previously released Windows installers may not contain the new UI.
+
 - Reduce desktop memory use by sending job summaries during refresh and loading complete receipts only when opened. Saved history and approval controls are preserved.
 - Keep unchanged pages in place, reuse timestamp formatting, serialize refresh bursts, and release closed receipt content. Delayed receipt replies cannot replace a newer receipt or reopen a closed one.
 - Add synthetic regression tests for large history, rendering, receipt races, refresh recovery and the preload command boundary.

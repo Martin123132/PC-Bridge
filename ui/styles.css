@@ -4,5 +4,101 @@
 
 #activity-rail{position:fixed;right:0;top:76px;bottom:0;width:300px;background:#0d171b;border-left:1px solid var(--line);z-index:5;padding:20px 16px;overflow:auto}#activity-rail[hidden]{display:none}.rail-head{margin-bottom:16px}.rail-head h2{font-size:20px}.rail-label{font-size:11px;color:var(--muted)}.rail-label select{margin-top:7px;width:100%}.rail-path{font:10px/1.45 Consolas,monospace;color:#789095;overflow-wrap:anywhere;margin:8px 0 13px}.rail-policy{display:flex;align-items:center;justify-content:space-between;gap:8px;font-size:11px;color:var(--muted);padding:10px 0;border-top:1px solid var(--line);border-bottom:1px solid var(--line)}.rail-note{font-size:10px;line-height:1.5;color:#9eb0b2;background:#17262a;border-left:2px solid var(--amber);padding:9px 10px;margin:14px 0}.rail-section{margin-top:15px}.rail-title{font-size:10px;text-transform:uppercase;letter-spacing:1.2px;color:var(--teal);margin-bottom:9px}.rail-job{display:block;width:100%;text-align:left;background:#142227;border:1px solid var(--line);border-radius:7px;color:var(--text);padding:10px;margin:0 0 8px}.rail-job .tag{margin-right:5px}.rail-job strong{display:block;font-size:11px;margin:6px 0 2px}.rail-job small{display:block;color:var(--muted);font-size:9px}.rail-job code{display:block;margin-top:6px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;background:#0d191d;font-size:9px}@media(max-width:1050px){#activity-rail{width:250px}}
 
+.work-clock{margin-top:18px}.work-clock .section-title{display:flex;align-items:center;justify-content:space-between;gap:16px;flex-wrap:wrap}.handover-note{white-space:pre-wrap;overflow-wrap:anywhere;font:13px/1.6 inherit;color:var(--muted);max-height:180px;overflow:auto}.work-clock summary{cursor:pointer;padding:8px 0}.work-clock .section-title h2{margin:0}
+
 /* Vault & Calendar */
 .vault-metrics{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px;margin:20px 0}.vault-metrics>div{border:1px solid var(--line);background:var(--surface);border-radius:9px;padding:15px}.vault-metrics strong{display:block;font-size:24px}.vault-metrics span{font-size:11px;color:var(--muted)}.calendar-layout{display:grid;grid-template-columns:minmax(420px,1fr) minmax(360px,.9fr);gap:18px}.calendar-title{display:flex;justify-content:space-between;gap:12px;align-items:center;margin-bottom:15px}.cal-week,.cal-grid{display:grid;grid-template-columns:repeat(7,1fr);gap:6px}.cal-week span{font-size:10px;text-align:center;color:var(--muted);padding:5px}.cal-day{min-height:65px;border:1px solid var(--line);background:#122025;color:var(--text);border-radius:7px;padding:7px;text-align:left;display:flex;flex-direction:column;justify-content:space-between}.cal-day.blank{background:transparent;border-color:transparent}.cal-day span{font-size:9px;color:var(--muted)}.cal-day.has-work{border-color:#466057;background:#1b2e2b}.cal-day.selected{outline:2px solid var(--accent);outline-offset:1px}.timeline{display:grid;gap:10px}.timeline-item{display:grid;grid-template-columns:62px 1fr;gap:12px;padding:12px 0;border-bottom:1px solid var(--line)}.timeline-item time{font-size:11px;color:var(--teal)}.timeline-item p{font-size:12px;margin:6px 0}.timeline-item code{display:block;max-width:100%;white-space:normal;overflow-wrap:anywhere}.day-section{margin-top:22px}.day-section h3{color:var(--muted);text-transform:uppercase;font-size:10px;letter-spacing:1px}.vault-file{padding:10px 0;border-bottom:1px solid var(--line)}.vault-file span,.vault-file small{display:block;font-size:10px;color:var(--muted)}.vault-file code{display:block;margin:4px 0;white-space:normal;overflow-wrap:anywhere}@media(max-width:1150px){.calendar-layout{grid-template-columns:1fr}.vault-metrics{grid-template-columns:1fr 1fr 1fr}}
+
+#access-label.chaff-restricted{color:var(--amber);font-weight:600}.chaff-access-card{border-color:#74603c;margin:24px 0;background:#252b24}.chaff-access-card h2{font-size:26px;margin:16px 0 12px}.rail-policy{flex-wrap:wrap}
+
+
+/* Siri workspace: deep burgundy phone finish, scoped entirely to Siri's page. */
+main:has(.siri-page){max-width:1600px;padding:22px 24px 56px;}
+.siri-page{--wine:#4e102b;--wine-2:#7f284b;--rose:#e0a5b7;--pearl:#fff0ee;--glass:rgba(64,16,38,.68);color:#fff1f1;background:radial-gradient(ellipse at 37% 20%,#863c61bb,transparent 56%),linear-gradient(130deg,#2a1126 0%,#45152e 40%,#220f22 100%);border:1px solid #82435e;border-radius:20px;padding:26px 28px 34px;min-height:740px;box-shadow:0 22px 75px #0b050d70;}
+.siri-page-header{display:flex;align-items:center;justify-content:space-between;gap:18px;margin-bottom:20px;}
+.siri-page-kicker,.siri-overline{font-size:10px;letter-spacing:2px;color:#e5adbe;font-weight:700;margin-bottom:8px;}
+.siri-page h1{font-size:29px;letter-spacing:-.6px;margin-bottom:5px;color:#fff2f4;}
+.siri-page-header p{font-size:13px;color:#d8b9c7;margin:0;}
+.siri-connection-tag{display:inline-flex;align-items:center;gap:9px;color:#f3d5dd;border:1px solid #a7667a;border-radius:99px;padding:7px 13px;font-size:11px;background:#3a1428;white-space:nowrap;}
+.siri-connection-tag span,.siri-led{height:9px;width:9px;border-radius:99px;background:#bd7a8a;}
+.siri-connection-tag.online span,.siri-led.on{background:#83e2bb;box-shadow:0 0 12px #5cf0a075;}
+.siri-layout{display:grid;grid-template-columns:minmax(325px,0.95fr) minmax(335px,1fr);gap:24px;align-items:start;}
+.siri-phone-column{display:flex;flex-direction:column;align-items:center;justify-content:flex-start;min-width:0;padding:2px 0 0;}
+.siri-phone-frame{width:min(100%,340px);border-radius:54px;padding:8px;background:linear-gradient(135deg,#fce1d9,#6e2346 25%,#2b0c25 62%,#facdc6 94%);box-shadow:0 0 0 2px #de99b39c,0 16px 48px #130516ca,0 0 60px #a8487868;position:relative;}
+.siri-device{height:615px;border-radius:45px;padding:14px 13px 15px;display:flex;flex-direction:column;overflow:hidden;position:relative;background:radial-gradient(ellipse at 75% 53%,#d9668d99,transparent 45%),radial-gradient(ellipse at 21% 84%,#e99b89db,transparent 49%),linear-gradient(148deg,#35123a 0%,#771d53 37%,#b14d72 74%,#3d1641 100%);box-shadow:inset 0 0 0 2px #25091f;}
+.siri-device:before{content:'';position:absolute;inset:46% -30% -22% 22%;border-radius:40%;transform:rotate(-26deg);background:linear-gradient(90deg,transparent,#f7b1a544,transparent);pointer-events:none;}
+.siri-device>*{z-index:1;}
+.siri-phone-top{display:flex;align-items:center;justify-content:space-between;height:34px;color:#fff8f8;font-weight:700;font-size:11px;padding:0 10px;}
+.siri-island{width:86px;height:23px;background:#140915;border-radius:99px;box-shadow:inset 0 2px 5px #0008;}
+.siri-phone-greeting{display:flex;flex-direction:column;margin:30px 10px 21px;gap:3px;}
+.siri-phone-greeting span{font-size:9px;color:#fff0eeaa;letter-spacing:2px;}
+.siri-phone-greeting strong{font-size:17px;color:#fff9f9;letter-spacing:-.3px;}
+.siri-app-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px 3px;}
+.siri-app{border:none;background:transparent;color:#fff7fb;display:flex;flex-direction:column;align-items:center;gap:5px;min-height:83px;padding:2px 0;text-align:center;}
+.siri-app:hover:not(:disabled){transform:translateY(-2px);filter:brightness(1.15);}
+.siri-app:focus-visible{outline:2px solid white;outline-offset:2px;border-radius:12px;}
+.siri-app-icon{height:51px;width:51px;border-radius:15px;display:flex;align-items:center;justify-content:center;font-size:28px;font-weight:650;box-shadow:0 5px 13px #1c082a79,inset 0 1px 0 #fff4;}
+.siri-app-icon.codex{background:linear-gradient(145deg,#18222b,#3a4450);font:800 16px Consolas,monospace;}
+.siri-app-icon.files{background:linear-gradient(145deg,#82d5ff,#1475d1);}
+.siri-app-icon.google{background:linear-gradient(135deg,#fefefe,#e8f3ff);color:#4285f4;text-shadow:2px 2px #e9aa3d;}
+.siri-app-icon.music{background:linear-gradient(135deg,#fa6388,#a21d52);}
+.siri-app-icon.windows{background:linear-gradient(135deg,#5ce0ff,#155cc2);}
+.siri-app-icon.notes{background:linear-gradient(135deg,#f7d179,#b96a46);}
+.siri-app-icon.calculator{background:linear-gradient(135deg,#7165b7,#302d65);}
+.siri-app-icon.activity{background:linear-gradient(135deg,#e0a7b1,#611c4c);}
+.siri-app-name{font-size:10px;line-height:1.1;font-weight:600;text-shadow:0 1px 4px #1f082b77;}
+.siri-phone-feed{border:1px solid #ffc7d14c;background:#34152ba6;border-radius:19px;padding:13px 13px 10px;margin:17px 3px 0;min-height:127px;backdrop-filter:blur(12px);}
+.siri-feed-heading{display:flex;align-items:center;justify-content:space-between;gap:7px;padding:0 0 6px;font-size:13px;color:#ffedf0;}
+.siri-feed-heading span{font-size:9px;color:#efc1cf;}
+.siri-recent-row{display:flex;align-items:center;gap:9px;border-top:1px solid #fff2;padding:7px 0;color:#fff3f3;font-size:10px;}
+.siri-recent-row>div{flex:1;min-width:0;}
+.siri-recent-row strong{display:block;font-size:10px;line-height:1.2;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+.siri-recent-row small{display:block;font-size:9px;color:#f1c8d5;}
+.siri-recent-row time{font-size:9px;color:#efc6d2;white-space:nowrap;}
+.siri-recent-dot{flex:0 0 20px;width:20px;height:20px;border-radius:7px;background:#9a456b;}
+.siri-no-activity{font-size:11px;color:#f0d0db;margin:12px 0 0;}
+.siri-phone-spacer{flex:1;min-height:8px;}
+.siri-phone-dock{margin:0 3px;background:#fbd4e03c;border-radius:23px;min-height:61px;display:flex;align-items:center;justify-content:space-evenly;font-size:26px;color:#fff5f5;}
+.siri-phone-dock span{border-radius:12px;width:44px;height:44px;display:grid;place-items:center;background:#d590a74a;}
+.siri-home-line{width:100px;height:4px;border-radius:99px;background:#fff9;margin:12px auto 0;}
+.siri-phone-note{font-size:11px;color:#d7a8ba;margin:18px 0 0;text-align:center;max-width:360px;}
+.siri-controls{display:flex;flex-direction:column;gap:13px;}
+.siri-control-card{border:1px solid #b56e8791;background:linear-gradient(135deg,#4b1735ed,#33182edb);border-radius:14px;padding:17px 19px;box-shadow:inset 0 1px #ffffff12;}
+.siri-control-card h2{font-size:16px;margin:0 0 8px;color:#ffe8ec;}
+.siri-control-card p{color:#e5c0d1;font-size:11px;line-height:1.6;margin:0 0 12px;}
+.siri-control-heading{display:flex;align-items:start;justify-content:space-between;gap:10px;}
+.siri-bound-address{font:11px Consolas,monospace;color:#ffe0ea!important;}
+.siri-page .button.primary,.siri-page .button:not(.secondary):not(.ghost):not(.danger-outline){background:#edabbd;color:#3e142c;border-color:#f0bbcb;}
+.siri-page .button.secondary{background:#6d2d4a;color:#fff0f4;border-color:#a96c84;}
+.siri-page .button.ghost{background:transparent;color:#efd1db;border-color:#9f6078;}
+.siri-page .button.danger-outline{color:#ffc5ce;border-color:#aa6d7d;}
+.siri-page .button{padding:7px 12px;font-size:11px;}
+.siri-action-row{display:flex;align-items:center;gap:10px;margin:12px 0 16px;}
+.siri-action-row>div{flex:1;min-width:0;}
+.siri-action-row strong{font-size:13px;display:block;}
+.siri-action-row small{display:block;color:#e1c1cd;font-size:10px;}
+.siri-chip{width:32px;height:32px;display:grid;place-items:center;border-radius:10px;font-size:22px;flex-shrink:0;}
+.siri-chip.music{background:linear-gradient(145deg,#ec547b,#9b1649);}
+.siri-search-label,.siri-policy-label{display:block;color:#f9d9e5;font-size:11px;}
+.siri-search-form{display:flex;gap:7px;margin:5px 0 11px;align-items:center;}
+.siri-page input[type=text],.siri-page select{background:#271424;border:1px solid #ae6b83;color:#ffe6ea;border-radius:8px;padding:10px;min-width:0;}
+.siri-page input[type=text]{flex:1;width:100%;margin:0;}
+.siri-page input::placeholder{color:#c89db0;}
+.siri-search-form .button{white-space:nowrap;padding:10px;}
+.siri-hint{font-size:10px!important;color:#cfaab9!important;line-height:1.5;}
+.siri-permission-note{font-size:10px;color:#edbbcc;margin-top:10px;}
+.siri-page .siri-details{display:block;}
+.siri-page .siri-details summary{font-size:12px;color:#f2c5d3;cursor:pointer;font-weight:600;}
+.siri-details-body{padding-top:15px;}
+.siri-secret{display:flex;flex-direction:column;gap:7px;background:#261422;border:1px solid #ba6e88;border-radius:8px;padding:10px;margin:10px 0;}
+.siri-secret span,.siri-secret small{font-size:10px;color:#f3c7d5;}
+.siri-secret code{overflow-wrap:anywhere;white-space:normal;color:#f7d9e3;background:transparent;font-size:10px;}
+@media(max-width:1110px){.siri-layout{grid-template-columns:1fr;gap:20px}.siri-phone-frame{width:min(100%,330px)}.siri-page{padding:20px 16px;}.siri-page-header{align-items:start;flex-direction:column}.siri-controls{max-width:620px;width:100%;margin:auto}}
+
+
+.siri-app-opened{display:flex;flex-direction:column;align-items:center;justify-content:center;min-height:330px;padding:18px;color:#fff5f5;text-align:center;gap:12px;}
+.siri-app-opened h2{font-size:22px;color:#fff4f4;margin:0;}
+.siri-app-opened p{font-size:12px;color:#fff0f2;white-space:pre-wrap;overflow-wrap:anywhere;max-height:180px;overflow:auto;margin:0;}
+.siri-back{align-self:flex-start;border:0;background:#fff1;color:#ffeff2;border-radius:9px;padding:5px 10px;font-size:12px;}
+.siri-opened-emblem{width:76px;height:76px;display:grid;place-items:center;border-radius:22px;background:linear-gradient(135deg,#bc597d,#5c2047);font-size:38px;box-shadow:0 10px 24px #21091b88;}
+.siri-opened-info{font-size:9px;color:#f1c0d3;margin-top:18px;}

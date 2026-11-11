@@ -6,6 +6,7 @@ import { CLIENT_ACCESS_MODES, makeClientPolicy } from './client-policy.mjs';
 
 const FILE_VERSION=1;
 const BUILTIN_ID='chatgpt-openai-tunnel';
+const BUILTIN_SIRI_ID='siri-shortcuts-local';
 const modeRank=mode=>({read_only:0,files_only:1,project_tasks:2,full:3})[mode]??-1;
 const validMode=mode=>{if(!CLIENT_ACCESS_MODES.includes(mode))throw Error('Choose Read only, Files only, Project Tasks, or Full access for this AI client.');return mode;};
 const cleanLabel=value=>{const text=String(value||'').trim();if(!text||text.length>60||/[\x00-\x1f]/.test(text))throw Error('AI client name must be 1–60 normal characters.');return text;};
@@ -29,11 +30,17 @@ export class ClientRegistry {
     let builtin=this.builtin();
     if(!builtin){const now=new Date().toISOString();builtin={id:BUILTIN_ID,client_id:'openai-tunnel',label:'ChatGPT',provider:'openai',transport:'openai-tunnel',max_access_mode:'full',built_in:true,created_at:now,updated_at:now};this.clients.unshift(builtin);await this.save();}
     else if(builtin.client_id!=='openai-tunnel'||builtin.provider!=='openai'||builtin.transport!=='openai-tunnel'||!builtin.built_in)throw Error('Built-in ChatGPT client policy is damaged. Remote AI connections are disabled until the file is repaired.');
+    let siri=this.clients.find(x=>x.id===BUILTIN_SIRI_ID);
+    if(!siri){
+      const now=new Date().toISOString();
+      siri={id:BUILTIN_SIRI_ID,client_id:'siri-shortcuts',label:'Siri (Shortcuts)',provider:'apple-siri',transport:'local-shortcuts',max_access_mode:'read_only',built_in:true,created_at:now,updated_at:now};
+      this.clients.push(siri);await this.save();
+    }else if(siri.client_id!=='siri-shortcuts'||siri.provider!=='apple-siri'||siri.transport!=='local-shortcuts'||!siri.built_in)throw Error('Built-in Siri client policy is damaged. Disable Siri and inspect the saved policy.');
     return this;
   }
   validateRecord(raw){
     if(!raw||typeof raw!=='object'||typeof raw.id!=='string'||!raw.id||raw.id.length>80)throw Error('Invalid AI client record.');
-    const transport=raw.transport==='openai-tunnel'?'openai-tunnel':raw.transport==='remote-mcp'?'remote-mcp':null;if(!transport)throw Error('Invalid AI client transport.');
+    const transport=raw.transport==='openai-tunnel'?'openai-tunnel':raw.transport==='remote-mcp'?'remote-mcp':raw.transport==='local-shortcuts'?'local-shortcuts':null;if(!transport)throw Error('Invalid AI client transport.');
     const clientId=String(raw.client_id||'');if(!/^[A-Za-z0-9._:-]{1,80}$/.test(clientId))throw Error('Invalid AI client identity.');
     return {id:raw.id,client_id:clientId,label:cleanLabel(raw.label),provider:cleanProvider(raw.provider),transport,max_access_mode:validMode(raw.max_access_mode),built_in:Boolean(raw.built_in),created_at:String(raw.created_at||new Date().toISOString()),updated_at:String(raw.updated_at||raw.created_at||new Date().toISOString())};
   }
@@ -41,6 +48,7 @@ export class ClientRegistry {
   snapshot(){return{version:FILE_VERSION,active_remote_client_id:this.activeRemoteClientId,clients:this.clients.map(publicRecord)};}
   policy(id){const r=this.record(id);return makeClientPolicy({id:r.client_id,provider:r.provider,transport:r.transport,maxAccessMode:r.max_access_mode});}
   chatgptPolicy(){return this.policy(BUILTIN_ID);}
+  siriPolicy(){return this.policy(BUILTIN_SIRI_ID);}
   activeRemoteRecord(){return this.activeRemoteClientId?this.record(this.activeRemoteClientId):null;}
   activeRemotePolicy(){const r=this.activeRemoteRecord();return r?this.policy(r.id):null;}
   async create({label,provider='external',max_access_mode='read_only'}={}){return this.serial(async()=>{

@@ -1,9 +1,12 @@
+import { summarizeUiJob } from '../src/ui-state.mjs';
+import { protectionSnapshot } from '../src/chaff-access-display.mjs';
+import { installProtectedBridge } from '../src/chaff-protected.mjs';
+import { startChaffControl } from '../src/chaff-control.mjs';
 import { app, BrowserWindow, WebContentsView, ipcMain, dialog, shell, clipboard, safeStorage, protocol, net, session } from 'electron';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import path from 'node:path';
 import { mkdir, readFile, writeFile, unlink } from 'node:fs/promises';
 import { randomBytes } from 'node:crypto';
-import { summarizeUiJob } from '../src/ui-state.mjs';
 import { BridgeCore, atomicJson, redact } from '../src/core.mjs';
 import { makeMcpApp, makeRemoteMcpApp } from '../src/mcp.mjs';
 import { Tunnel } from './tunnel.mjs';
@@ -12,6 +15,9 @@ import { Vault } from '../src/vault.mjs';
 import { createSourceManifestSnapshot } from '../src/vault_snapshot.mjs';
 import { buildSafeDiagnosticReport } from '../src/diagnostics.mjs';
 import { ClientRegistry, CHATGPT_CLIENT_RECORD_ID } from '../src/client-registry.mjs';
+import { workSessionsFor } from '../src/work-sessions.mjs';
+import { startClockDisplay } from '../src/ditto-clock-display.mjs';
+import { createSiriController } from '../src/siri-connection.mjs';
 
 const root=path.dirname(path.dirname(fileURLToPath(import.meta.url)));
 const smoke=process.argv.includes('--smoke-test');
@@ -26,7 +32,12 @@ async function boot(){
   if(smoke&&process.argv.includes('--smoke-corrupt-vault')){const smokeVaultDir=path.join(dataDir,'vault');await mkdir(smokeVaultDir,{recursive:true});await writeFile(path.join(smokeVaultDir,'vault.sqlite'),'not a sqlite database',{flag:'wx'});}
   const vault=Vault.open({dataDir});
   const core=await new BridgeCore({dataDir,workspaceDir:smoke?path.join(dataDir,'Workspace'):path.join(app.getPath('documents'),'PC Bridge Workspace'),nodeExecutable:process.execPath,electronNode:true,vault}).init();
+  const protectedBridge=installProtectedBridge(core,dataDir);
   const clients=await new ClientRegistry({dataDir,core}).init();
+  const workSessions=workSessionsFor(core);await workSessions.ready;
+  const dittoClockDisplay=await startClockDisplay({workSessions,dataDir,isProtected:()=>core.chaffProtected.latched}).catch(()=>null);
+  const chaffControl=await startChaffControl({core,dataDir}).catch(()=>null);
+  const siri=createSiriController({core,clients,dataDir,encrypt:text=>safeStorage.encryptString(text),decrypt:buffer=>safeStorage.decryptString(buffer)});
   // Explicit local launch option used only when the owner has requested trusted
   // access (also available as the single visible Enable button).
   if(!smoke && process.argv.includes('--enable-trusted-access') && (core.accessMode!=='full'||core.fullAccessAcknowledged))await core.enable();
@@ -52,7 +63,7 @@ async function boot(){
   async function clearRemoteState(){rememberedRemote=null;for(const target of [remoteStatePath,remoteGuestIdentityPath]){try{await unlink(target);}catch(error){if(error.code!=='ENOENT')throw error;}}}
   const publicTunnel=new PublicTunnel({onGuestIdentity:persistRemoteGuestIdentity,onChange:()=>{changed();void persistRemoteState();}});
   core.on('change',changed);
-  const state=()=>{const remoteRecord=remoteClientRecordId?clients.record(remoteClientRecordId):null;const snapshot=core.snapshot();snapshot.jobs=snapshot.jobs.map(summarizeUiJob);return{...snapshot,vault:vault.summary(),connection:{...tunnel.snapshot(),tunnel_id:settings.tunnelId,credential_saved:hasKey},remote_connection:{...publicTunnel.snapshot(),client_record_id:remoteClientRecordId,client_label:remoteRecord?.label??null,remembered:Boolean(rememberedRemote),remembered_url:rememberedRemote?.mcp_url??null},ai_clients:clients.snapshot(),data_dir:dataDir,packaged:app.isPackaged};};
+  const state=()=>{const remoteRecord=remoteClientRecordId?clients.record(remoteClientRecordId):null;const snapshot=core.snapshot();snapshot.jobs=snapshot.jobs.map(summarizeUiJob);return{...snapshot,chaff_protection:protectionSnapshot(protectedBridge),vault:vault.summary(),connection:{...tunnel.snapshot(),tunnel_id:settings.tunnelId,credential_saved:hasKey},remote_connection:{...publicTunnel.snapshot(),client_record_id:remoteClientRecordId,client_label:remoteRecord?.label??null,remembered:Boolean(rememberedRemote),remembered_url:rememberedRemote?.mcp_url??null},ai_clients:clients.snapshot(),siri_connection:siri.snapshot(),data_dir:dataDir,packaged:app.isPackaged};};
   const links={tunnels:'https://platform.openai.com/settings/organization/tunnels',keys:'https://platform.openai.com/settings/organization/api-keys',chatgpt:'https://chatgpt.com/',plugins:'https://chatgpt.com/plugins',docs:'https://developers.openai.com/api/docs/guides/secure-mcp-tunnels',claude:'https://claude.ai/customize/connectors'};
   const startLocal=async()=>{if(listener)return;const record=clients.record(CHATGPT_CLIENT_RECORD_ID);listener=await new Promise((resolve,reject)=>{const server=makeMcpApp(core,{token:localToken,client_id:record.client_id,provider:record.provider,max_access_mode:record.max_access_mode,policy_resolver:()=>clients.chatgptPolicy()}).listen(0,'127.0.0.1',()=>resolve(server));server.once('error',reject);});port=listener.address().port;};
   const stopLocal=async()=>{await core.pause({shutdown:true});await tunnel.stop();if(listener){const old=listener;listener=null;old.closeAllConnections();await new Promise(resolve=>old.close(resolve));}};
@@ -144,7 +155,9 @@ async function boot(){
     try{
       switch(command){
         case 'jobDetail':{const job=core.jobs.find(j=>j.id===data?.id);if(!job)throw Error('Receipt not found.');return job;}
-        case 'state':return state();
+        case 'state':return {...state(),work_sessions:workSessions.snapshot()};
+        case 'workSessionSetting':await workSessions.setEnabled(data?.enabled);return workSessions.snapshot();
+        case 'workSessionResume':return workSessions.resume(data?.id,data?.period,true);
         case 'chatView':return setChatVisible(Boolean(data?.visible));
         case 'chatReload':return reloadChat({force:Boolean(data?.force)});
         case 'setAccessMode':if(data?.mode==='full'&&!await confirmFullAccess())return{cancelled:true};return core.setAccessMode(data?.mode);
@@ -169,6 +182,16 @@ async function boot(){
         case 'disconnect':await stopLocal();return state();
         case 'remoteConnect':return connectRemote();
         case 'remoteDisconnect':await stopRemote({forget:true});return state();
+        case 'siriStart':if(smoke)throw Error('Siri network connections are disabled in smoke tests.');if(!safeStorage.isEncryptionAvailable())throw Error('Windows encrypted storage is unavailable. Cannot pair Siri.');return siri.start();
+        case 'siriStop':return siri.stop();
+        case 'siriPerform':return siri.performLocally(data);
+        case 'siriPairing':return siri.pairing();
+        case 'siriChooseEvidence':{
+          const chosen=await dialog.showOpenDialog(win,{title:'Choose a saved build evidence folder for Siri',properties:['openDirectory']});
+          if(chosen.canceled||!chosen.filePaths?.[0])return{cancelled:true};
+          await siri.setEvidenceFolder(chosen.filePaths[0]);return state();
+        }
+        case 'siriRotate':{const response=await dialog.showMessageBox(win,{type:'warning',buttons:['Cancel','Revoke Siri pairing'],defaultId:0,cancelId:0,message:'Revoke this Siri pairing?',detail:'The existing iPhone Shortcut will stop connecting until you pair it again.'});if(response.response!==1)return{cancelled:true};return siri.rotate();}
         case 'ensureClaudeClient':{
           if(remoteListener||publicTunnel.child){
             const active=clients.activeRemoteRecord();
@@ -210,7 +233,17 @@ async function boot(){
           const p=core.project(data.id),grant=(p.project_tasks||[]).find(t=>t.id===data.taskId);if(!grant)throw Error('Project task grant not found.');await core.grantProjectTask(p.id,grant.path,grant.name);return state();
         }
         case 'revokeProjectTask':await core.revokeProjectTask(data.id,data.taskId);return state();
-        case 'approve':await core.approve(data.id);return state();
+        case 'setJobLimits':await core.setJobLimits(data);return state();
+        case 'approve':{
+          const job=core.jobs.find(j=>j.id===data.id);
+          let backgroundConfirmed=false;
+          if(job?.scheduling_class==='background_service'&&job.state==='pending'){
+            const answer=await dialog.showMessageBox(win,{type:'warning',title:'Allow background service?',message:`Run ${job.service_name} alongside other work?`,detail:`Working folder: ${job.cwd}\nShell: ${job.shell}\nCommand: ${job.command}\nMaximum runtime: ${job.max_runtime_seconds} seconds\n\nThis command runs as your Windows user. It is NOT a read-only sandbox and could change files while other jobs run. Only approve a viewer/server you trust to run alongside edits. Stop it at any time in Activity.`,buttons:['Cancel','Allow this service'],defaultId:0,cancelId:0,noLink:true});
+            if(answer.response!==1)return {cancelled:true};
+            backgroundConfirmed=true;
+          }
+          await core.approve(data.id,{backgroundConfirmed});return state();
+        }
         case 'reject':await core.cancel(data.id);return state();
         case 'restore':{
           const j=core.jobs.find(j=>j.id===data.id);if(!j)throw Error('Edit not found.');
@@ -232,13 +265,31 @@ async function boot(){
   if(!smoke && hasKey && settings.tunnelId && core.trustedAccess)void connectLocal().catch(()=>changed());
   if(!smoke && rememberedRemote?.provider==='maxoperf-guest-tunnel')void connectRemote({restore:true}).catch(()=>changed());
   win.on('close',event=>{if(quitting)return;event.preventDefault();win.hide();changed();});
-  app.on('before-quit',event=>{if(quitting)return;event.preventDefault();quitting=true;clearInterval(chatSyncTimer);void stopRemote().catch(()=>{}).then(()=>stopLocal()).finally(()=>{vault.close();app.quit();});});
+  app.on('before-quit',event=>{if(quitting)return;event.preventDefault();quitting=true;clearInterval(chatSyncTimer);void siri.close().catch(()=>{}).then(()=>stopRemote()).catch(()=>{}).then(()=>stopLocal()).then(()=>protectedBridge.stop()).then(()=>chaffControl?.close()).then(()=>dittoClockDisplay?.close()).finally(()=>{vault.close();app.quit();});});
   if(smoke){
     try{
       await new Promise(resolve=>setTimeout(resolve,500));
       const first=await win.webContents.executeJavaScript('({title:document.title,body:document.body.innerText,bridge:typeof window.bridge.call,require:typeof window.require})');
       if(!first.body.includes('Your AI. Your computer.') || first.bridge!=='function' || first.require!=='undefined')throw Error('Desktop renderer isolation or first screen failed.');
       if(!first.body.includes('PRIVATE ALPHA · 0.5.16'))throw Error('Build-channel/version badge did not render from state.');
+      const clockClient={id:'clock-smoke',provider:'openai',transport:'smoke'};
+      const clockA=await workSessions.touch(clockClient,{'openai/session':'smoke-a'},undefined,{label:'Ditto build',turnId:'smoke-message-a1'});
+      const clockB=await workSessions.touch(clockClient,{'openai/session':'smoke-b'},undefined,{label:'Another chat',turnId:'smoke-message-b1'});
+      await workSessions.checkpoint(clockA,{period:1,completed:'Saved the workspace controls.',verified:'Local fixture tests passed.',remaining:'Finish the next small feature.',next_step:'Continue from the saved source files.'},true);
+      await win.webContents.executeJavaScript('document.querySelector("[data-page=workSessions]").click()');
+      await new Promise(resolve=>setTimeout(resolve,350));
+      const clockBody=await win.webContents.executeJavaScript('document.querySelector("#main").innerText');
+      if(!clockBody.includes('Ditto build')||!clockBody.includes('Another chat')||!clockBody.includes('Saved handover'))throw Error('Work-clock dashboard failed to render saved sessions.');
+      await writeFile(path.join(dataDir,'work-clocks.png'),(await win.webContents.capturePage()).toPNG());
+      await win.webContents.executeJavaScript('document.querySelector("[data-action=work-session-toggle]").click()');
+      for(let i=0;i<30&&workSessions.state.enabled;i++)await new Promise(resolve=>setTimeout(resolve,50));
+      if(workSessions.state.enabled)throw Error('Local work-clock toggle failed.');
+      await win.webContents.executeJavaScript('window.bridge.call("workSessionSetting",{enabled:true})');
+      await new Promise(resolve=>setTimeout(resolve,250));
+      await win.webContents.executeJavaScript('document.querySelector("[data-action=work-session-resume]").click()');
+      for(let i=0;i<30&&workSessions.get(clockA).period===1;i++)await new Promise(resolve=>setTimeout(resolve,50));
+      if(workSessions.get(clockA).period!==2||workSessions.get(clockB).period!==1||core.trustedAccess)throw Error('Work-clock resume changed the wrong session or access state.');
+      await atomicJson(path.join(dataDir,'work-clock-ui-result.json'),{ok:true,two_sessions_rendered:true,handover_visible:true,local_toggle:true,independent_resume:true,access_unchanged:true});
       await win.webContents.executeJavaScript('document.querySelector("[data-page=projects]").click()');
       await new Promise(resolve=>setTimeout(resolve,100));
       if(!await win.webContents.executeJavaScript('Boolean(document.querySelector("[data-action=create-project]"))'))throw Error('Create workspace UI action is missing.');
@@ -274,6 +325,26 @@ async function boot(){
       const projectTaskPath=path.join(core.project(core.workspaceProjectId).root,'project-task-smoke.mjs');await writeFile(projectTaskPath,"console.log('PROJECT_TASK_SMOKE')\n");const projectTaskGrant=await core.grantProjectTask(core.workspaceProjectId,'project-task-smoke.mjs','Smoke task');await core.setAccessMode('project_tasks');let arbitraryBlocked=false;try{await core.submit('command',{project_id:core.workspaceProjectId,shell:'node',command:'console.log(1)',request_key:'project-task-command'},{wait:true});}catch(error){arbitraryBlocked=/Project Tasks mode/.test(error.message);}if(!arbitraryBlocked)throw Error('Project Tasks mode did not block arbitrary command execution.');const projectTaskRun=await core.submit('project_task',{project_id:core.workspaceProjectId,task_id:projectTaskGrant.id,request_key:'project-task-run'},{wait:true});if(projectTaskRun.state!=='succeeded'||!projectTaskRun.result.stdout_tail.includes('PROJECT_TASK_SMOKE'))throw Error('Project Tasks mode did not execute the locally pinned task.');await core.setAccessMode('full');
       const createRoot=path.join(dataDir,'Created workspace');const created=await core.createProject(createRoot,'Created workspace');if(created.root!==createRoot||core.defaultProjectId!==created.id)throw Error('Create workspace core flow failed.');
       const guardAfterCreate=core.remoteStatus().workspace_guard;if(core.remoteProjectId(null,guardAfterCreate)!==created.id)throw Error('Fresh workspace guard did not resolve active project.');const oldGuard=guardAfterCreate;await core.setDefaultProject(core.workspaceProjectId);let staleRejected=false;try{core.remoteProjectId(null,oldGuard);}catch{staleRejected=true;}if(!staleRejected)throw Error('Workspace guard survived an active-workspace change.');if(core.remoteProjectId(created.id,null)!==created.id)throw Error('Explicit project_id should not require a workspace guard.');await core.removeProject(created.id);
+      if(process.argv.includes('--smoke-siri-phone')){
+        win.setSize(1450,940);
+        await win.webContents.executeJavaScript('document.querySelector("[data-page=siri]").click()');
+        await new Promise(resolve=>setTimeout(resolve,300));
+        const phone=await win.webContents.executeJavaScript("(()=>{const page=document.querySelector('.siri-page');const icons=[...document.querySelectorAll('.siri-app')].map(x=>x.getAttribute('aria-label'));const frame=document.querySelector('.siri-phone-frame');const style=frame?getComputedStyle(frame):null;return{page:Boolean(page),icons,frame:Boolean(frame),burgundy:Boolean(style?.backgroundImage.includes('linear-gradient')),search:Boolean(document.querySelector('#siri-google-query')),music:Boolean(document.querySelector('[data-siri-action=open_apple_music]')),evidence:Boolean(document.querySelector('[data-action=siri-choose-evidence]')),secretVisible:Boolean(document.querySelector('.siri-secret'))};})()");
+        if(!phone.page||!phone.frame||!phone.burgundy||!phone.search||!phone.music||phone.icons.length!==8||!phone.evidence||phone.secretVisible)throw Error('Siri virtual phone UI failed: '+JSON.stringify(phone));
+        await writeFile(path.join(dataDir,'siri-burgundy-phone-home.png'),(await win.webContents.capturePage()).toPNG());
+        const denied=await win.webContents.executeJavaScript('window.bridge.call("siriPerform",{action:"open_apple_music"}).then(()=>false,()=>true)');
+        if(!denied)throw Error('Read-only Siri ceiling allowed Music launch');
+        await win.webContents.executeJavaScript('document.querySelector("[data-siri-action=status]").click()');
+        await new Promise(resolve=>setTimeout(resolve,300));
+        const opened=await win.webContents.executeJavaScript("(()=>{const view=document.querySelector('.siri-app-opened');return Boolean(view&&view.innerText.includes('Windows')&&view.innerText.includes('Your Windows PC is online'))})()");
+        if(!opened)throw Error('Virtual phone did not show the real Windows status inside an app view');
+        await writeFile(path.join(dataDir,'siri-burgundy-phone-windows.png'),(await win.webContents.capturePage()).toPNG());
+        await win.webContents.executeJavaScript('document.querySelector("[data-action=siri-phone-back]").click()');
+        await new Promise(resolve=>setTimeout(resolve,150));
+        if(!await win.webContents.executeJavaScript("Boolean(document.querySelector('.siri-app-grid'))"))throw Error('Siri phone Home navigation failed');
+        await atomicJson(path.join(dataDir,'siri-phone-ui-result.json'),{ok:true,burgundy:true,icons:phone.icons,music_and_google_ready:true,read_only_music_blocked:true,windows_status_opened:true,home_navigation:true,secret_hidden:true});
+        await win.webContents.executeJavaScript('document.querySelector("[data-page=home]").click()');
+      }
       const demo=await core.demo();await new Promise(resolve=>setTimeout(resolve,300));
       const smokeSnapshot=await createSourceManifestSnapshot({project:core.project(demo.id),dataDir,label:'Smoke source snapshot'});
       const storedSnapshot=vault.recordSnapshot(smokeSnapshot);
@@ -344,9 +415,45 @@ async function boot(){
       if(passed.state!=='succeeded'||passed.result?.exit_code!==0||!/pass 2/.test(passed.result.stdout))throw Error('Bundled runtime did not pass the corrected practice tests.');
       const command=await core.submit('command',{shell:'node',command:'console.log("Hello from the bundled PC Bridge runtime!")',request_key:'desktop-command'},{wait:true});
       if(command.state!=='succeeded'||!command.result.stdout.includes('Hello from'))throw Error('Bundled direct command failed.');
+      if(process.argv.includes('--smoke-background-services')){
+        const waitFor=async check=>{for(let i=0;i<120;i++){if(await check())return;await new Promise(r=>setTimeout(r,50));}throw Error('Background desktop check timed out');};
+        await win.webContents.executeJavaScript('document.querySelector("#review").close();document.querySelector("[data-page=activity]").click()');
+        await waitFor(()=>win.webContents.executeJavaScript('Boolean(document.querySelector("#active-limit"))'));
+        await win.webContents.executeJavaScript(`(()=>{for(const [id,value] of [['active-limit','24'],['background-limit','2']]){const input=document.getElementById(id);input.value=value;input.dispatchEvent(new Event('input',{bubbles:true}));}document.querySelector('[data-action=save-job-limits]').click();})()`);
+        await waitFor(async()=>{const value=JSON.parse(await readFile(path.join(dataDir,'workspace-state.json'),'utf8'));return value.job_limits?.max_active_requests===24&&value.job_limits?.max_background_services===2;});
+        const savedLimits=JSON.parse(await readFile(path.join(dataDir,'workspace-state.json'),'utf8')).job_limits;
+        if(savedLimits.max_active_requests!==24||savedLimits.max_background_services!==2)throw Error('Desktop job limits did not persist');
+        const service=await core.submit('process',{project_id:core.workspaceProjectId,shell:'node',command:'const http=require("node:http");const server=http.createServer((q,r)=>r.end("isolated desktop viewer"));server.listen(0,"127.0.0.1",()=>console.log("READY "+server.address().port));',request_key:'desktop-background-service',background_service:true,service_name:'Isolated local viewer',max_runtime_seconds:30});
+        if(service.state!=='pending')throw Error('Service launched without owner confirmation');
+        await waitFor(()=>win.webContents.executeJavaScript(`Boolean(document.querySelector('[data-action=review][data-id="${service.id}"]'))`));
+        await win.webContents.executeJavaScript(`document.querySelector('[data-action=review][data-id="${service.id}"]').click()`);
+        const nativeDialog=dialog.showMessageBox;let allow=false,confirmations=0;
+        dialog.showMessageBox=async(owner,options)=>{
+          if(options.title!=='Allow background service?'||options.defaultId!==0||options.cancelId!==0||!options.detail.includes('NOT a read-only sandbox'))throw Error('Wrong service confirmation dialog');
+          confirmations++;return {response:allow?1:0};
+        };
+        try{
+          const cancel=await win.webContents.executeJavaScript(`window.bridge.call('approve',{id:'${service.id}'})`);
+          if(!cancel.cancelled||core.getJob(service.id).state!=='pending')throw Error('Cancelled confirmation launched a service');
+          allow=true;
+          await win.webContents.executeJavaScript(`document.querySelector('[data-action=approve]').click()`);
+          await waitFor(()=>core.processStatus(service.id).stdout_tail?.includes('READY '));
+        }finally{dialog.showMessageBox=nativeDialog;}
+        if(confirmations!==2)throw Error('Local confirmation path not exercised');
+        const short=await core.submit('command',{project_id:core.workspaceProjectId,shell:'node',command:'console.log("worked beside viewer")',request_key:'desktop-alongside'},{wait:true});
+        if(short.state!=='succeeded'||core.processStatus(service.id).state!=='running')throw Error('Background service blocked ordinary work');
+        await waitFor(()=>win.webContents.executeJavaScript(`!document.querySelector('#review').open&&Boolean(document.querySelector('[data-action=stop-job][data-id="${service.id}"]'))`));
+        const categories=await win.webContents.executeJavaScript(`document.querySelector('#main').innerText`);
+        if(!['Running work','Waiting','Background services (1)','Finished','Isolated local viewer'].every(label=>categories.includes(label)))throw Error('Activity categories or service label missing');
+        await writeFile(path.join(dataDir,'background-services.png'),(await win.webContents.capturePage()).toPNG());
+        await win.webContents.executeJavaScript(`document.querySelector('[data-action=stop-job][data-id="${service.id}"]').click()`);
+        await waitFor(()=>!core.executions.has(service.id));
+        if(core.getJob(service.id).state!=='cancelled'||core.controllers.size)throw Error('Desktop Stop did not close the service');
+        await atomicJson(path.join(dataDir,'background-service-ui-result.json'),{ok:true,limits_saved:true,confirmation_cancel_then_allow:true,named_service_visible:true,categories_visible:true,same_folder_command_passed:true,stop_button_closed_service:true,provider_calls:0});
+      }
       const fakeKey='s'+'k-'+'Z'.repeat(32),fakeBearer='Bearer '+'Y'.repeat(24),fakeTunnel='tunnel_'+'a'.repeat(32),fakeUserPath='C:\\Users\\DiagnosticUser\\private.txt';const diag=buildSafeDiagnosticReport({version:app.getVersion(),platform:process.platform,buildChannel:'private-alpha',connection:{state:'error',ready:false,detail:[fakeKey,fakeBearer,fakeTunnel,fakeUserPath].join(' | '),key:'LEAKME_CONNECTION'},credentialSaved:true,status:core.status(),lastRequest:core.lastSeen,verifiedAt:core.verifiedAt,projectCount:core.projects.length,receiptCount:core.auditCount,receiptHead:core.auditHash,vaultSummary:{...vault.summary(),db_path:'LEAKME_VAULT_PATH'}});const diagText=JSON.stringify(diag);if([fakeKey,'DiagnosticUser',fakeTunnel,'LEAKME_CONNECTION','LEAKME_VAULT_PATH'].some(x=>diagText.includes(x))||/Bearer Y{12}/.test(diagText))throw Error('Safe diagnostic report leaked poisoned input.');if(diag.build_channel!=='private-alpha'||diag.version!==app.getVersion())throw Error('Diagnostic build identity is wrong.');
       await atomicJson(path.join(dataDir,'smoke-result.json'),{ok:true,renderer_isolated:true,version:app.getVersion(),encryption_available:safeStorage.isEncryptionAvailable(),bundled_runtime:process.versions.node,workspace_ready:true,workspace_create_ready:true,workspace_guard_ready:true,files_only_ready:true,project_tasks_ready:true,vault_recovery_ready:true,vault_recovery_ui_ready:true,full_access_warning_gate_ready:true,diagnostic_export_safe:true,build_channel_ready:true,vault_ready:vault.summary().projects>=1,calendar_ready:true,single_upfront_choice:true,no_local_approval:true,practice_failed_before:true,direct_edit:true,practice_passed_after:true,direct_command:true});
     }catch(error){await atomicJson(path.join(dataDir,'smoke-result.json'),{ok:false,error:redact(error.message)});process.exitCode=1;}
-    quitting=true;await stopLocal();vault.close();win.destroy();app.quit();
+    quitting=true;await dittoClockDisplay?.close();await stopLocal();vault.close();win.destroy();app.quit();
   }
 }

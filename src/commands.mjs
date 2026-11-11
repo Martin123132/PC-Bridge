@@ -1,4 +1,4 @@
-import { spawn } from 'node:child_process';
+import { spawnContained as spawn } from './chaff-spawn.mjs';
 import path from 'node:path';
 import { StringDecoder } from 'node:string_decoder';
 
@@ -19,12 +19,7 @@ function invocation(shell, command, nodeExecutable, electronNode) {
   return { system, executable, args, env: commandEnvironment(shell === 'node' && electronNode) };
 }
 
-function killTree(system, child) {
-  if (process.platform === 'win32' && child.pid) {
-    const killer = spawn(path.join(system,'taskkill.exe'), ['/PID',String(child.pid),'/T','/F'], {windowsHide:true,stdio:'ignore'});
-    killer.on('error', () => child.kill()); killer.on('exit', code => { if (code) child.kill(); });
-  } else child.kill('SIGKILL');
-}
+function killTree(system, child) { child.kill(); }
 
 const redact = text => String(text).replace(/sk-[A-Za-z0-9_-]{12,}/g,'[REDACTED KEY]').replace(/(Bearer\s+)[A-Za-z0-9._~-]{12,}/gi,'$1[REDACTED]');
 
@@ -69,7 +64,7 @@ export function runManagedCommand({ shell, command, cwd, max_runtime_seconds = 3
     const stop=reason=>{if(stopped)return;stopped=reason;killTree(system,child);};
     const abort=()=>stop('Cancelled by owner or access paused.');signal?.addEventListener('abort',abort,{once:true});
     const timer=setTimeout(()=>stop(`Managed process exceeded the ${max_runtime_seconds}-second runtime limit.`),max_runtime_seconds*1000);
-    onStart({pid:child.pid,started_at:new Date().toISOString()});
+    child.once('spawn',()=>onStart({pid:child.pid,started_at:new Date().toISOString()}));
     child.stdout.on('data',chunk=>append('stdout',decoders.stdout.write(chunk)));
     child.stderr.on('data',chunk=>append('stderr',decoders.stderr.write(chunk)));
     const cleanup=()=>{clearTimeout(timer);signal?.removeEventListener('abort',abort);};
@@ -91,7 +86,7 @@ export function runManagedNodeTask({ root, task, max_runtime_seconds = 3600, nod
     const publish=()=>onOutput({stdout_tail:redact(tails.stdout),stderr_tail:redact(tails.stderr),output_truncated:Boolean(dropped.stdout||dropped.stderr),dropped_bytes:{...dropped}});
     const append=(channel,text)=>{tails[channel]+=text;if(Buffer.byteLength(tails[channel],'utf8')>TAIL_LIMIT){const buf=Buffer.from(tails[channel],'utf8');const excess=buf.length-TAIL_LIMIT;dropped[channel]+=excess;tails[channel]=buf.subarray(excess).toString('utf8');}publish();};
     const stop=reason=>{if(stopped)return;stopped=reason;killTree(system,child);};const abort=()=>stop('Cancelled by owner or access paused.');signal?.addEventListener('abort',abort,{once:true});
-    const timer=setTimeout(()=>stop(`Project task exceeded the ${max_runtime_seconds}-second runtime limit.`),max_runtime_seconds*1000);onStart({pid:child.pid,started_at:new Date().toISOString()});
+    const timer=setTimeout(()=>stop(`Project task exceeded the ${max_runtime_seconds}-second runtime limit.`),max_runtime_seconds*1000);child.once('spawn',()=>onStart({pid:child.pid,started_at:new Date().toISOString()}));
     child.stdout.on('data',chunk=>append('stdout',decoders.stdout.write(chunk)));child.stderr.on('data',chunk=>append('stderr',decoders.stderr.write(chunk)));
     const cleanup=()=>{clearTimeout(timer);signal?.removeEventListener('abort',abort);};child.on('error',error=>{cleanup();reject(error);});child.on('close',code=>{append('stdout',decoders.stdout.end());append('stderr',decoders.stderr.end());cleanup();resolve({exit_code:code,stdout_tail:redact(tails.stdout),stderr_tail:redact(tails.stderr),stopped,output_truncated:Boolean(dropped.stdout||dropped.stderr),dropped_bytes:dropped,execution:'Locally pinned project task tracked by PC Bridge as your Windows user; not an OS sandbox.',provenance:'untrusted_process_output',instruction_authority:false});});
   });

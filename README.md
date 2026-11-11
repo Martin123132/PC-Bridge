@@ -28,6 +28,18 @@ Verify downloads against `SHA256SUMS.txt` on the release.
 
 The video walks from opening PC Bridge, through the real ChatGPT setup, to a harmless action on the PC.
 
+## Siri Virtual Phone — source preview
+
+PC Bridge now includes a **Connect Siri** page with a burgundy, phone-shaped workspace. It is part of the **same Windows application**, not a separate desktop app or an iOS emulator.
+
+- A Siri-triggered iPhone Shortcut can send a command to the owner's PC on the private LAN, then speak PC Bridge's actual response.
+- The desktop phone interface offers Google search in Microsoft Edge, Apple Music, Files, Notepad, Calculator, Windows status, Codex task records, and recent Bridge activity.
+- The integrated iPhone-to-PC connection has been demonstrated, including launching Windows Apple Music. Individual Windows applications must already be installed and functioning.
+- The Siri connection starts locally and is controlled by the existing PC Bridge access settings. The same Calendar/Activity history remains available to other connected assistants.
+
+**Source-versus-download status:** the source preview is ahead of the previously published Windows installers. Existing GitHub Releases downloads may not yet contain the Siri phone interface. A refreshed installer will need separate clean-machine acceptance.
+
+See [Siri and Apple Shortcuts setup](docs/SIRI_SHORTCUTS_SETUP.md). This repository does not contain personal pairing keys, owner-specific LAN addresses, or iPhone Shortcut exports.
 ## What it currently supports
 
 - ChatGPT through the official OpenAI tunnel client.
@@ -40,6 +52,8 @@ The video walks from opening PC Bridge, through the real ChatGPT setup, to a har
 - Git status/diff helpers.
 - Local Vault activity history and source snapshots.
 - A persistent ChatGPT web view inside the desktop app.
+- An opt-in Siri/Apple Shortcuts connection and virtual phone interface.
+- A shared Calendar/Activity record for work performed through supported clients.
 
 PC Bridge runs tools as the signed-in Windows user. **It is not an operating-system sandbox.**
 

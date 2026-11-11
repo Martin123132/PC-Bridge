@@ -15,14 +15,16 @@
       <button data-page="chat" class="nav"><span>✦</span>ChatGPT</button>
       <button data-page="connect" class="nav"><span>⇄</span>Connect ChatGPT</button>
       <button data-page="remote" class="nav"><span>◎</span>Connect Claude</button>
+      <button data-page="siri" class="nav"><span>◉</span>Connect Siri</button>
       <button data-page="projects" class="nav"><span>▣</span>Workspaces</button>
       <button data-page="calendar" class="nav"><span>◷</span>Calendar</button>
       <button data-page="activity" class="nav"><span>≋</span>Activity</button>
+      <button data-page="workSessions" class="nav"><span>◴</span>Chat work clocks</button>
     </nav>
     <div class="sidebar-bottom"><div class="privacy-line"><span class="dot"></span>Local-first. Yours to control.</div><p>No Codex required.<br>No local AI to install.</p><span class="version" id="build-badge">PRIVATE ALPHA · starting…</span></div>
   </aside>
   <div class="shell">
-    <header><div id="connection-pill" class="pill">Not connected</div><div class="header-actions"><span id="access-label">Access paused</span><button id="sync-chat" class="button small ghost" hidden>Sync chat</button><button id="pause-top" class="button small danger-outline">Pause access</button></div></header>
+    <header><div id="connection-pill" class="pill">Not connected</div><div class="header-actions"><span id="access-label" role="status" aria-live="polite">Access paused</span><button id="sync-chat" class="button small ghost" hidden>Sync chat</button><button id="pause-top" class="button small danger-outline">Pause access</button></div></header>
     <main id="main" tabindex="-1"><p>Starting your local workspace…</p></main>
   </div>
   <aside id="activity-rail" hidden aria-label="PC Bridge activity rail"></aside>
